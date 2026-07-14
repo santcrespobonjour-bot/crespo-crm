@@ -1,0 +1,828 @@
+﻿<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CRM · Crespo Real State</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+<style>
+  :root{ --azul-oscuro:#1F3864; --azul-medio:#2E5496; --azul-claro:#8EAADB; --azul-muyclaro:#D9E1F2; --azul-acero:#0F6FC6; --tinta:#1a2230; --bg:#f4f6fb; }
+  *{ box-sizing:border-box; }
+  body{ margin:0; font-family:"Segoe UI",Arial,sans-serif; color:var(--tinta); background:var(--bg); font-size:13.5px; }
+  header{ background:var(--azul-oscuro); color:#fff; padding:10px 18px; display:flex; align-items:center; gap:18px; position:sticky; top:0; z-index:500; }
+  header .brand{ font-weight:800; letter-spacing:2px; text-transform:uppercase; font-size:15px; }
+  header .brand small{ display:block; font-size:9px; letter-spacing:1px; color:var(--azul-claro); font-weight:400; }
+  nav{ display:flex; gap:4px; margin-left:10px; flex-wrap:wrap; }
+  nav button{ background:transparent; color:#cdd8ef; border:0; padding:8px 13px; border-radius:6px 6px 0 0; cursor:pointer; font-size:13px; font-weight:600; }
+  nav button.active{ background:var(--bg); color:var(--azul-oscuro); }
+  main{ padding:18px; max-width:1200px; margin:0 auto; }
+  .view{ display:none; } .view.active{ display:block; }
+  h2{ color:var(--azul-oscuro); font-size:18px; margin:4px 0 12px; }
+  h3{ color:var(--azul-medio); font-size:14px; margin:16px 0 6px; }
+  .cards{ display:flex; gap:12px; flex-wrap:wrap; margin-bottom:16px; }
+  .card{ background:#fff; border:1px solid #e3e9f4; border-left:4px solid var(--azul-acero); border-radius:8px; padding:12px 16px; flex:1 1 150px; box-shadow:0 1px 3px rgba(0,0,0,.04); }
+  .card .v{ font-size:26px; font-weight:800; color:var(--azul-oscuro); } .card .l{ font-size:11px; color:#5b6472; text-transform:uppercase; letter-spacing:.4px; }
+  .panel{ background:#fff; border:1px solid #e3e9f4; border-radius:8px; padding:16px; margin-bottom:16px; box-shadow:0 1px 3px rgba(0,0,0,.04); }
+  table{ border-collapse:collapse; width:100%; font-size:12px; }
+  th,td{ border-bottom:1px solid #e8edf6; padding:7px 8px; text-align:left; vertical-align:middle; }
+  th{ background:var(--azul-oscuro); color:#fff; font-weight:600; cursor:pointer; }
+  tbody tr:hover{ background:var(--azul-muyclaro); }
+  td.num,th.num{ text-align:right; white-space:nowrap; }
+  a{ color:var(--azul-acero); text-decoration:none; } a:hover{ text-decoration:underline; }
+  button.act{ background:var(--azul-acero); color:#fff; border:0; padding:8px 14px; border-radius:6px; cursor:pointer; font-weight:600; font-size:12.5px; }
+  button.ghost{ background:#fff; color:var(--azul-oscuro); border:1px solid var(--azul-claro); }
+  button.mini{ padding:3px 8px; font-size:11px; }
+  input,select,textarea{ font-family:inherit; font-size:12.5px; padding:6px 8px; border:1px solid #c9d4e8; border-radius:5px; width:100%; }
+  label{ font-size:11px; color:#5b6472; font-weight:600; display:block; margin:6px 0 2px; }
+  .grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; }
+  .toolbar{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:12px; }
+  .pill{ display:inline-block; padding:2px 9px; border-radius:11px; font-size:11px; font-weight:700; color:#fff; }
+  .iv-bar{ height:10px; border-radius:5px; background:#e3e9f4; overflow:hidden; }
+  .iv-bar > span{ display:block; height:100%; }
+  #map{ height:480px; border-radius:8px; }
+  dialog{ border:0; border-radius:10px; padding:0; box-shadow:0 8px 40px rgba(0,0,0,.3); width:min(560px,94vw); }
+  dialog .dlg-h{ background:var(--azul-oscuro); color:#fff; padding:12px 16px; font-weight:700; border-radius:10px 10px 0 0; }
+  dialog .dlg-b{ padding:16px; } dialog .dlg-f{ padding:12px 16px; display:flex; gap:8px; justify-content:flex-end; border-top:1px solid #eee; }
+  #ficha{ width:min(640px,96vw); }
+  dialog h4{ color:var(--azul-oscuro); margin:14px 0 5px; font-size:13px; border-bottom:1px solid #e8edf6; padding-bottom:3px; }
+  dialog h4:first-child{ margin-top:0; }
+  .muted{ color:#7a8494; } .small{ font-size:11px; }
+  .factor-row{ display:grid; grid-template-columns:1fr 46px 92px 60px; gap:8px; align-items:center; padding:5px 0; border-bottom:1px solid #eef2f9; }
+  .factor-row input[type=range]{ padding:0; }
+  /* multiselect (checkboxes) */
+  .ms{ position:relative; display:inline-block; }
+  .ms-btn{ background:#fff; border:1px solid #c9d4e8; border-radius:5px; padding:6px 26px 6px 8px; font-size:12.5px; font-family:inherit; color:var(--tinta); cursor:pointer; width:100%; text-align:left; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .ms-btn:after{ content:"▾"; position:absolute; right:8px; top:6px; color:var(--azul-medio); }
+  .ms-btn.on{ border-color:var(--azul-acero); color:var(--azul-oscuro); font-weight:700; }
+  .ms-menu{ position:absolute; z-index:600; top:calc(100% + 3px); left:0; min-width:100%; max-width:320px; max-height:260px; overflow:auto; background:#fff; border:1px solid #c9d4e8; border-radius:6px; box-shadow:0 6px 20px rgba(0,0,0,.14); padding:4px; }
+  .ms-menu label{ display:flex; align-items:center; gap:7px; margin:0; padding:5px 7px; border-radius:4px; font-size:12px; color:var(--tinta); font-weight:500; cursor:pointer; white-space:nowrap; }
+  .ms-menu label:hover{ background:var(--azul-muyclaro); }
+  .ms-menu label.all{ font-weight:700; color:var(--azul-oscuro); border-bottom:1px solid #e8edf6; border-radius:4px 4px 0 0; }
+  .ms-menu input[type=checkbox]{ width:auto; padding:0; margin:0; accent-color:var(--azul-acero); }
+  code{ background:#eef2f9; padding:1px 5px; border-radius:4px; font-size:11px; }
+  pre{ background:#0f1b30; color:#cfe0ff; padding:12px; border-radius:8px; overflow:auto; font-size:11px; line-height:1.5; }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">Crespo Real State<small>CRM · Estudio del Mercado</small></div>
+  <nav id="nav"></nav>
+</header>
+<main>
+  <section class="view" id="v-dashboard"></section>
+  <section class="view" id="v-zonas"></section>
+  <section class="view" id="v-propiedades"></section>
+  <section class="view" id="v-historico"></section>
+  <section class="view" id="v-valorizacion"></section>
+  <section class="view" id="v-mapa"><h2>Mapa de zonas</h2><div class="panel"><div id="map"></div><p class="small muted" style="margin-top:8px">Marcadores coloreados por Índice de Valorización (IV). Clic para ver la ficha de la zona.</p></div></section>
+  <section class="view" id="v-base"></section>
+</main>
+
+<dialog id="dlg"><form method="dialog"><div class="dlg-h" id="dlg-h">Editar</div><div class="dlg-b" id="dlg-b"></div><div class="dlg-f"><button class="act ghost" value="cancel">Cancelar</button><button class="act" id="dlg-ok" value="ok">Guardar</button></div></form></dialog>
+<dialog id="ficha"><div class="dlg-h" id="ficha-h">Ficha</div><div class="dlg-b" id="ficha-b"></div><div class="dlg-f"><button class="act ghost" onclick="closeFicha(false)">Cerrar</button><button class="act" onclick="closeFicha(true)">Guardar y cerrar</button></div></dialog>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+  integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+/* ============================================================================
+   MODELO DE DATOS — listo para migrar a Supabase (PostgreSQL)
+   Esquema SQL equivalente (ver pestaña "Base" para el DDL completo):
+     zonas(id, nombre, departamento, localidad, tipologia, usd_m2_ref, lat, lon, perfil, notas)
+     propiedades(id, zona, tipologia, direccion, m2, precio_pub, descuento, precio_real, usd_m2, fecha_aviso, estado, portal, url)
+     valorizacion(zona, factor -> score)   // 10 factores 0-5
+     historico(zona, tipologia, anio, usd_m2, fuente)
+   Persistencia local: localStorage (clave 'crespo_crm_db'). Backup/portátil: export/import JSON.
+   ============================================================================ */
+const FACTORES = [
+  {k:'obra',     n:'Obra nueva en curso',        w:15},
+  {k:'dens',     n:'Densificación normativa (LVP)', w:12},
+  {k:'transp',   n:'Transporte y conectividad',  w:12},
+  {k:'comercio', n:'Comercio y servicios',       w:10},
+  {k:'educ',     n:'Educación (univ./colegios)', w:10},
+  {k:'infra',    n:'Infraestructura pública',    w:10},
+  {k:'salud',    n:'Salud',                      w:8},
+  {k:'natural',  n:'Amenidad natural (costa/verde)', w:8},
+  {k:'seg',      n:'Seguridad y consolidación',  w:8},
+  {k:'demanda',  n:'Demanda y absorción',        w:7},
+];
+function calcIV(sc){ if(!sc) return 0; let iv=0; FACTORES.forEach(f=> iv += f.w*((sc[f.k]||0)/5)); return Math.round(iv); }
+function ivColor(iv){ return iv>=75?'#1F3864': iv>=60?'#0F6FC6': iv>=40?'#2E5496':'#8EAADB'; }
+function ivLabel(iv){ return iv>=75?'muy fuerte': iv>=60?'fuerte': iv>=40?'moderado':'débil'; }
+
+/* -------------------- DATOS SEMILLA (base histórica inicial) -------------------- */
+function seed(){ return { zonas:[], valorizacion:{}, historico:[], propiedades:[] };}
+/* Version publicada: base semilla vacia. Los datos se traen de Supabase (Base de datos -> Conectar -> Traer base). */
+
+/* -------------------- PERSISTENCIA -------------------- */
+const KEY='crespo_crm_db';
+let DB = load();
+function load(){ try{ const r=localStorage.getItem(KEY); return r? JSON.parse(r): seed(); }catch(e){ return seed(); } }
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify(DB)); }catch(e){ alert('No se pudo guardar en el navegador: '+e.message); } }
+function zoneName(id){ const z=DB.zonas.find(z=>z.id===id); return z? z.nombre : id; }
+
+/* -------------------- GESTIÓN (pipeline CRM) + migración de campos -------------------- */
+const GESTION=[
+  {v:'Sin clasificar', c:'#8892a0'},
+  {v:'Prospecto', c:'#8EAADB'},
+  {v:'Tomar acción', c:'#0F6FC6'},
+  {v:'En seguimiento', c:'#2E5496'},
+  {v:'Descartada', c:'#b0b8c4'},
+  {v:'Cerrada / Comprada', c:'#1F3864'},
+];
+function gColor(v){ const g=GESTION.find(g=>g.v===v); return g? g.c : '#8892a0'; }
+const SEED_COMMENTS={};
+const SEED_CONTACTS={};
+function migrate(){ DB.propiedades.forEach(p=>{ if(p.comentarios===undefined) p.comentarios = SEED_COMMENTS[p.id]||''; if(p.gestion===undefined) p.gestion='Sin clasificar'; if(p.proxima_accion===undefined) p.proxima_accion=''; if(p.fecha_seguimiento===undefined) p.fecha_seguimiento=''; if(p.contacto===undefined) p.contacto = SEED_CONTACTS[p.id] || {nombre:'',telefono:'',email:'',inmobiliaria:''}; if(!Array.isArray(p.acciones)) p.acciones=[];
+  /* alta en CRM = cuándo entró a ESTA base. NO se estima con fecha_aviso (esa es la antigüedad del aviso en el portal).
+     Las propiedades viejas quedan s/d hasta traer created_at de Supabase (botón en Base de datos). */
+  if(p.fecha_alta===undefined) p.fecha_alta='';
+  if(p.alta_aprox){ p.fecha_alta=''; delete p.alta_aprox; }
+}); }
+migrate();
+
+/* -------------------- ANTIGÜEDAD EN EL CRM -------------------- */
+const ANTIG=[{v:'nuevas',l:'Nuevas (≤7 días)',c:'#0F6FC6'},{v:'30',l:'8 – 30 días',c:'#2E5496'},{v:'90',l:'31 – 90 días',c:'#8EAADB'},{v:'viejas',l:'Más de 90 días',c:'#1F3864'},{v:'sd',l:'Sin fecha de alta',c:'#7a8494'}];
+function diasCRM(p){ if(!p.fecha_alta) return null; const d=Math.floor((Date.now()-new Date(p.fecha_alta+'T00:00:00').getTime())/86400000); return d<0?0:d; }
+function antigBucket(p){ const d=diasCRM(p); if(d===null) return 'sd'; return d<=7?'nuevas' : d<=30?'30' : d<=90?'90' : 'viejas'; }
+function antigColor(p){ const b=antigBucket(p), a=ANTIG.find(x=>x.v===b); return a?a.c:'#7a8494'; }
+function diasTxt(p){ const d=diasCRM(p); if(d===null) return 's/d'; return d===0?'hoy' : d===1?'1 día' : d+' días'; }
+function setCampo(id,campo,valor){ const p=DB.propiedades.find(p=>p.id===id); if(!p)return; p[campo]=valor; save(); if(campo==='gestion') renderProps(); }
+function gotoGestion(v){ propFilter.gestion=[v]; propFilter.zonas=[...dashFilter.zonas]; propFilter.tips=[...dashFilter.tips]; propFilter.antig=[]; propFilter.q=''; show('propiedades'); }
+
+/* -------------------- MULTISELECT (desplegable con checkboxes) -------------------- */
+const MSOPEN={};
+function msOpen(id,rerender){ const was=MSOPEN[id]; Object.keys(MSOPEN).forEach(k=>MSOPEN[k]=false); MSOPEN[id]=!was; window[rerender](); }
+function msPick(arr,v){ if(!v) return []; const i=arr.indexOf(v); if(i<0) arr.push(v); else arr.splice(i,1); return arr; }
+function msLabel(ph,opts,sel){ if(!sel.length) return ph; if(sel.length===1){ const o=opts.find(o=>o.v===sel[0]); return o?o.l:sel[0]; } return sel.length+' seleccionados'; }
+/* id: clave única · ph: texto "todas…" · opts:[{v,l}] · sel: array de valores · pick: nombre de función global que recibe (valor) · rerender: nombre de la función que repinta la vista */
+function msBox(id,ph,opts,sel,pick,rerender,width){
+  const open=!!MSOPEN[id];
+  return `<div class="ms" style="width:${width||210}px">
+    <button class="ms-btn ${sel.length?'on':''}" title="${esc(sel.length?msLabel(ph,opts,sel):ph)}" onclick="msOpen('${id}','${rerender}')">${esc(msLabel(ph,opts,sel))}</button>
+    ${open? `<div class="ms-menu">
+      <label class="all"><input type="checkbox" ${sel.length?'':'checked'} onchange="${pick}('')"> ${esc(ph)}</label>
+      ${opts.map(o=>`<label><input type="checkbox" ${sel.includes(o.v)?'checked':''} onchange="${pick}('${esc(o.v).replace(/'/g,"\\'")}')"> ${esc(o.l)}</label>`).join('')}
+    </div>` : ''}
+  </div>`;
+}
+/* clic fuera → cerrar el menú abierto */
+document.addEventListener('click',e=>{
+  if(!Object.values(MSOPEN).some(Boolean)) return;
+  if(e.target.closest && e.target.closest('.ms')) return;
+  Object.keys(MSOPEN).forEach(k=>MSOPEN[k]=false);
+  const v=document.querySelector('.view.active'); if(!v) return;
+  if(v.id==='v-dashboard') renderDashboard(); else if(v.id==='v-propiedades') renderProps();
+});
+
+/* -------------------- FICHA de propiedad (contacto + historial de acciones) -------------------- */
+let fichaId=null;
+function esc(s){ return (s==null?'':(''+s)).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function hoyStr(){ return new Date().toISOString().slice(0,10); }
+function openFicha(id){ const p=DB.propiedades.find(x=>x.id===id); if(!p)return; if(!p.contacto) p.contacto={nombre:'',telefono:'',email:'',inmobiliaria:''}; if(!Array.isArray(p.acciones)) p.acciones=[]; fichaId=id; renderFicha(); document.getElementById('ficha').showModal(); }
+function renderFicha(){
+  const p=DB.propiedades.find(x=>x.id===fichaId); if(!p) return; const c=p.contacto||{};
+  const hist=[...(p.acciones||[])].sort((a,b)=>(''+b.fecha).localeCompare(''+a.fecha));
+  document.getElementById('ficha-h').textContent='Ficha · '+p.direccion+' ('+zoneName(p.zona)+')';
+  document.getElementById('ficha-b').innerHTML=`
+    <div class="small muted" style="margin-bottom:4px">En el CRM desde <b style="color:${antigColor(p)}">${p.fecha_alta||'s/d'}</b> · <b style="color:${antigColor(p)}">${diasTxt(p)}</b>${antigBucket(p)==='nuevas'?' <span class="pill" style="background:#0F6FC6">NUEVA</span>':''}${p.fecha_aviso?` <span class="muted">· aviso publicado ${p.fecha_aviso}</span>`:''}</div>
+    <h4>Datos de contacto</h4>
+    <div class="grid">
+      <div><label>Nombre / referente</label><input id="c_nombre" value="${esc(c.nombre)}"></div>
+      <div><label>Inmobiliaria</label><input id="c_inmo" value="${esc(c.inmobiliaria)}"></div>
+      <div><label>Teléfono</label><input id="c_tel" value="${esc(c.telefono)}" placeholder="+598…"></div>
+      <div><label>Email</label><input id="c_mail" value="${esc(c.email)}"></div>
+    </div>
+    <h4>Próxima acción a tomar</h4>
+    <div class="grid">
+      <div style="grid-column:1/-1"><label>¿Qué hay que hacer?</label><input id="c_pacc" value="${esc(p.proxima_accion)}" placeholder="ej: llamar inmobiliaria, coordinar visita"></div>
+      <div><label>Fecha de seguimiento</label><input id="c_fseg" type="date" value="${p.fecha_seguimiento||''}"></div>
+      <div><label>Aviso</label>${p.url?`<div style="padding-top:7px"><a href="${p.url}" target="_blank">Abrir aviso ↗</a></div>`:'<div class="small muted" style="padding-top:8px">—</div>'}</div>
+    </div>
+    <h4>Historial de acciones (${hist.length})</h4>
+    <div style="max-height:170px;overflow:auto;border:1px solid #e8edf6;border-radius:6px;padding:4px 6px;background:#fafcff">
+      ${hist.length? hist.map(a=>`<div style="display:flex;gap:8px;align-items:center;padding:5px 0;border-bottom:1px solid #eef2f9"><span class="pill" style="background:#2E5496;white-space:nowrap">${a.fecha}</span><span style="flex:1">${esc(a.texto)}</span><button class="act ghost mini" type="button" onclick="delAccion('${a.fecha}','${encodeURIComponent(a.texto)}')">✕</button></div>`).join('') : '<p class="small muted" style="margin:6px 2px">Sin acciones registradas todavía. Registrá la primera abajo.</p>'}
+    </div>
+    <div class="toolbar" style="margin-top:8px">
+      <input type="date" id="na_fecha" value="${hoyStr()}" style="max-width:150px">
+      <input id="na_texto" placeholder="Describí la acción (ej: llamé, dejé mensaje, visité…)" style="flex:1;min-width:180px">
+      <button class="act" type="button" onclick="addAccion()">+ Registrar acción</button>
+    </div>`;
+}
+function syncFichaInputs(){ const p=DB.propiedades.find(x=>x.id===fichaId); if(!p)return; p.contacto={nombre:val('c_nombre'),inmobiliaria:val('c_inmo'),telefono:val('c_tel'),email:val('c_mail')}; p.proxima_accion=val('c_pacc'); p.fecha_seguimiento=val('c_fseg'); }
+function addAccion(){ const p=DB.propiedades.find(x=>x.id===fichaId); const f=val('na_fecha')||hoyStr(); const t=(val('na_texto')||'').trim(); if(!t) return; syncFichaInputs(); p.acciones.push({fecha:f,texto:t}); save(); renderFicha(); }
+function delAccion(fecha,encTexto){ const p=DB.propiedades.find(x=>x.id===fichaId); const t=decodeURIComponent(encTexto); const i=p.acciones.findIndex(a=>a.fecha===fecha&&a.texto===t); if(i>=0){ syncFichaInputs(); p.acciones.splice(i,1); save(); renderFicha(); } }
+function closeFicha(saveIt){ if(saveIt){ syncFichaInputs(); save(); } document.getElementById('ficha').close(); if(document.getElementById('v-propiedades').classList.contains('active')) renderProps(); if(document.getElementById('v-dashboard').classList.contains('active')) renderDashboard(); }
+
+/* -------------------- ACTUALIZACIÓN DE BASE (merge con dedupe por URL) -------------------- */
+/* Nota: un archivo local no puede rastrear portales por CORS. Este lote es data real ya relevada;
+   el rastreo automático continuo se hace desde el backend (Supabase + job) tras la migración. */
+const NUEVOS_AVISOS=[];
+function mergeNuevos(arr){ const urls=new Set(DB.propiedades.map(p=>p.url)); let added=0,dup=0;
+  arr.forEach(n=>{ if(n.url&&urls.has(n.url)){ dup++; return; } const p=Object.assign({descuento:'',precio_real:'',fecha_aviso:'',comentarios:'',gestion:'Sin clasificar',proxima_accion:'',fecha_seguimiento:'',portal:'InfoCasas',contacto:{nombre:'',telefono:'',email:'',inmobiliaria:''},acciones:[]},n,{fecha_alta:hoyStr()}); if(!p.id) p.id='P'+Date.now().toString(36)+Math.floor(Math.random()*1e4); DB.propiedades.push(p); if(p.url)urls.add(p.url); added++; });
+  if(added) save(); return {added,dup}; }
+function refreshBase(){ const r=mergeNuevos(NUEVOS_AVISOS); alert('Actualización de base:\n• '+r.added+' aviso(s) nuevo(s) agregado(s)\n• '+r.dup+' ya estaban en la base (omitidos por duplicado)\n\nExportá el JSON en la pestaña Base para conservar el histórico.'); renderHistorico(); }
+
+/* -------------------- NAV -------------------- */
+const TABS=[['dashboard','Panel'],['zonas','Zonas'],['propiedades','Propiedades'],['historico','Histórico'],['valorizacion','Valorización'],['mapa','Mapa'],['base','Base de datos']];
+const nav=document.getElementById('nav');
+TABS.forEach(([id,label])=>{ const b=document.createElement('button'); b.textContent=label; b.dataset.t=id; b.onclick=()=>show(id); nav.appendChild(b); });
+let mapObj=null;
+function show(id){
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('active', b.dataset.t===id));
+  document.getElementById('v-'+id).classList.add('active');
+  if(id==='dashboard') renderDashboard();
+  if(id==='zonas') renderZonas();
+  if(id==='propiedades') renderProps();
+  if(id==='historico') renderHistorico();
+  if(id==='valorizacion') renderValor();
+  if(id==='base') renderBase();
+  if(id==='mapa') setTimeout(renderMap,60);
+}
+
+/* -------------------- DASHBOARD -------------------- */
+function avg(arr){ arr=arr.filter(x=>typeof x==='number'&&!isNaN(x)); return arr.length? Math.round(arr.reduce((a,b)=>a+b,0)/arr.length):0; }
+let dashFilter={zonas:[],tips:[]};
+function dashPickZona(v){ dashFilter.zonas=msPick(dashFilter.zonas,v); renderDashboard(); }
+function dashPickTip(v){ dashFilter.tips=msPick(dashFilter.tips,v); renderDashboard(); }
+function dashSeg(zona,tip){ dashFilter.zonas=zona?[zona]:[]; dashFilter.tips=tip?[tip]:[]; renderDashboard(); }
+function dashAddZona(z){ if(!dashFilter.zonas.includes(z)) dashFilter.zonas.push(z); renderDashboard(); }
+/* estadísticos USD/m² de una lista de propiedades (la mediana manda) */
+function statsUSD(list){
+  const v=list.map(p=>+p.usd_m2).filter(x=>x>0&&!isNaN(x));
+  return {n:list.length, nv:v.length, med:v.length?Math.round(median(v)):0, avg:avg(v),
+          mn:v.length?Math.round(Math.min.apply(null,v)):0, mx:v.length?Math.round(Math.max.apply(null,v)):0};
+}
+function renderDashboard(){
+  const tips=[...new Set(DB.propiedades.map(p=>p.tipologia))].filter(Boolean).sort();
+  const fz=dashFilter.zonas, ft=dashFilter.tips;
+  const filtrado = !!(fz.length||ft.length);
+  const sel=DB.propiedades.filter(p=>(!fz.length||fz.includes(p.zona))&&(!ft.length||ft.includes(p.tipologia)));
+  const s=statsUSD(sel);
+  const zref=(fz.length===1)? DB.zonas.find(z=>z.id===fz[0]) : null;
+  const desvio = (zref&&s.med&&+zref.usd_m2_ref)? Math.round((s.med/(+zref.usd_m2_ref)-1)*100) : null;
+  const mezcla = (fz.length>1||ft.length>1)&&s.nv>1;
+  /* segmentos zona × tipología: acá se ve por qué el promedio global no dice nada */
+  const segsMap={};
+  DB.propiedades.forEach(p=>{ const k=p.zona+'||'+p.tipologia; (segsMap[k]=segsMap[k]||{zona:p.zona,tip:p.tipologia,list:[]}).list.push(p); });
+  const segmentos=Object.values(segsMap).map(x=>Object.assign({},x,statsUSD(x.list))).sort((a,b)=>b.med-a.med);
+  const zorder=[...DB.zonas].filter(z=>!fz.length||fz.includes(z.id)).map(z=>({z,iv:calcIV(DB.valorizacion[z.id])})).sort((a,b)=>b.iv-a.iv);
+  const hoy=new Date().toISOString().slice(0,10);
+  const segFollow=sel.filter(p=>p.fecha_seguimiento).sort((a,b)=>(''+a.fecha_seguimiento).localeCompare(''+b.fecha_seguimiento));
+  const nomZ = fz.length? fz.map(zoneName).join(' + ') : 'Todas las zonas';
+  const nomT = ft.length? ft.join(' + ') : 'todas las tipologías';
+  const titSel = filtrado? nomZ+' · '+nomT : 'Toda la base (mezcla zonas y tipologías)';
+  document.getElementById('v-dashboard').innerHTML=`
+    <h2>Panel general</h2>
+    <div class="panel">
+      <div class="toolbar">
+        <b class="small">Filtrar panel:</b>
+        ${msBox('dz','Todas las zonas',DB.zonas.map(z=>({v:z.id,l:z.nombre+' ('+z.departamento+')'})),fz,'dashPickZona','renderDashboard',230)}
+        ${msBox('dt','Todas las tipologías',tips.map(t=>({v:t,l:t})),ft,'dashPickTip','renderDashboard',210)}
+        ${filtrado?`<button class="act ghost mini" onclick="dashSeg('','')">✕ Limpiar</button>`:''}
+        <span class="small muted">${s.n} propiedad(es) · ${s.nv} con USD/m²</span>
+      </div>
+      <div class="small muted" style="margin-bottom:6px">Segmento: <b>${esc(titSel)}</b>${!filtrado?' — los valores de abajo son un agregado; elegí zona y tipología para que signifiquen algo.':''}${filtrado&&s.nv&&s.nv<10?' <span class="pill" style="background:#1F3864">muestra chica (n&lt;10): tomar como indicativo</span>':''}${mezcla?' <span class="pill" style="background:#8EAADB">agregado de varios segmentos: mirá la tabla de abajo</span>':''}</div>
+      <div class="cards">
+        <div class="card"><div class="v">${s.nv?s.med.toLocaleString('es-UY'):'s/d'}</div><div class="l">USD/m² <b>mediana</b></div></div>
+        <div class="card"><div class="v">${s.nv?s.avg.toLocaleString('es-UY'):'s/d'}</div><div class="l">USD/m² promedio</div></div>
+        <div class="card"><div class="v" style="font-size:20px">${s.nv?s.mn.toLocaleString('es-UY')+' – '+s.mx.toLocaleString('es-UY'):'s/d'}</div><div class="l">Rango mín – máx</div></div>
+        <div class="card"><div class="v">${s.n}</div><div class="l">Propiedades en el segmento</div></div>
+        ${zref? `<div class="card"><div class="v" style="font-size:20px">${(+zref.usd_m2_ref).toLocaleString('es-UY')}${desvio!==null?` <span class="small" style="color:${desvio<0?'#0F6FC6':'#1F3864'}">(${desvio>0?'+':''}${desvio}%)</span>`:''}</div><div class="l">USD/m² ref. de zona (mediana vs ref.)</div></div>`
+                : `<div class="card"><div class="v">${DB.zonas.length}</div><div class="l">Zonas en base</div></div>`}
+      </div>
+    </div>
+    <div class="panel">
+      <h3 style="margin-top:0">USD/m² por zona × tipología <span class="small muted">· clic en una fila para filtrar el panel</span></h3>
+      <div style="overflow:auto"><table><thead><tr><th>Zona</th><th>Tipología</th><th class="num">n</th><th class="num">Mediana</th><th class="num">Promedio</th><th class="num">Mín</th><th class="num">Máx</th><th>Muestra</th></tr></thead><tbody>
+      ${segmentos.length? segmentos.map(g=>{ const act=(!fz.length||fz.includes(g.zona))&&(!ft.length||ft.includes(g.tip))&&filtrado; return `<tr style="cursor:pointer;${act?'background:#D9E1F2':''}" onclick="dashSeg('${g.zona}','${esc(g.tip||'').replace(/'/g,"\\'")}')">
+        <td><b>${zoneName(g.zona)}</b></td><td>${g.tip||'s/d'}</td>
+        <td class="num">${g.n}</td>
+        <td class="num"><b>${g.nv?g.med.toLocaleString('es-UY'):'s/d'}</b></td>
+        <td class="num">${g.nv?g.avg.toLocaleString('es-UY'):'s/d'}</td>
+        <td class="num">${g.nv?g.mn.toLocaleString('es-UY'):'s/d'}</td>
+        <td class="num">${g.nv?g.mx.toLocaleString('es-UY'):'s/d'}</td>
+        <td>${g.nv>=10? '<span class="pill" style="background:#0F6FC6">suficiente</span>' : `<span class="pill" style="background:#8EAADB">n&lt;10 · indicativo</span>`}</td>
+      </tr>`; }).join('') : `<tr><td colspan="8" class="small muted">Sin propiedades cargadas.</td></tr>`}
+      </tbody></table></div>
+    </div>
+    <div class="panel">
+      <h3 style="margin-top:0">Antigüedad en el CRM${filtrado?' <span class="small muted">· del segmento filtrado</span>':''} <span class="small muted">· clic para ver esas propiedades</span></h3>
+      <div class="cards">
+      ${ANTIG.map(a=>{ const n=sel.filter(p=>antigBucket(p)===a.v).length; return `<div class="card" style="border-left-color:${a.c};cursor:pointer" onclick="gotoAntig('${a.v}')"><div class="v" style="color:${a.c}">${n}</div><div class="l">${a.l}</div></div>`; }).join('')}
+      </div>
+      ${(()=>{ const ds=sel.map(diasCRM).filter(d=>d!==null); const ult=sel.filter(p=>p.fecha_alta).sort((a,b)=>(''+b.fecha_alta).localeCompare(''+a.fecha_alta))[0];
+        const sd=sel.filter(p=>!p.fecha_alta).length;
+        return `${ds.length?`<div class="small muted">Antigüedad mediana en el CRM: <b>${Math.round(median(ds))} días</b>${ult?` · última alta: <b>${ult.fecha_alta}</b> (${esc(ult.direccion)})`:''}</div>`:''}
+          ${sd?`<div class="small muted">Días en el CRM = desde que entró a <b>esta</b> base (no es la antigüedad del aviso en el portal). ${sd} sin fecha: completalas en <b>Base de datos → Traer fechas de alta</b> (usa el <code>created_at</code> de Supabase) o a mano en la ficha.</div>`:''}`; })()}
+    </div>
+    <div class="panel">
+      <h3 style="margin-top:0">Pipeline de gestión${filtrado?' <span class="small muted">· del segmento filtrado</span>':''} <span class="small muted">· clic para filtrar Propiedades</span></h3>
+      <div class="cards">
+      ${GESTION.map(g=>{ const n=sel.filter(p=>p.gestion===g.v).length; return `<div class="card" style="border-left-color:${g.c};cursor:pointer" onclick="gotoGestion('${g.v}')"><div class="v" style="color:${g.c}">${n}</div><div class="l">${g.v}</div></div>`; }).join('')}
+      </div>
+    </div>
+    <div class="panel">
+      <h3 style="margin-top:0">Próximos seguimientos${segFollow.length?` <span class="small muted">(${segFollow.length})</span>`:''}</h3>
+      ${segFollow.length? `<table><thead><tr><th>Propiedad</th><th>Zona</th><th>Próxima acción</th><th>Fecha</th><th>Estado</th></tr></thead><tbody>
+        ${segFollow.map(p=>{ const vencida=p.fecha_seguimiento<hoy; return `<tr style="cursor:pointer" onclick="editProp('${p.id}')"><td><b>${p.direccion}</b></td><td>${zoneName(p.zona)}</td><td>${p.proxima_accion||'—'}</td><td>${p.fecha_seguimiento}</td><td><span class="pill" style="background:${vencida?'#1F3864':'#0F6FC6'}">${vencida?'vencida':'próxima'}</span></td></tr>`; }).join('')}
+        </tbody></table>` : `<p class="small muted">Sin seguimientos programados${filtrado?' en este segmento':''}. Cargá una <b>fecha de seguimiento</b> y una <b>próxima acción</b> en la pestaña Propiedades (o clic en una propiedad para editarla).</p>`}
+    </div>
+    <div class="panel">
+      <h3 style="margin-top:0">Zonas por Índice de Valorización (IV)</h3>
+      <table><thead><tr><th>Zona</th><th>Departamento</th><th>Tipología</th><th class="num">USD/m² ref.</th><th style="width:230px">IV</th></tr></thead><tbody>
+      ${zorder.map(({z,iv})=>`<tr style="cursor:pointer" onclick="dashAddZona('${z.id}')">
+        <td><b>${z.nombre}</b></td><td>${z.departamento}</td><td>${z.tipologia}</td>
+        <td class="num">${(+z.usd_m2_ref).toLocaleString('es-UY')}</td>
+        <td><div style="display:flex;align-items:center;gap:8px"><div class="iv-bar" style="flex:1"><span style="width:${iv}%;background:${ivColor(iv)}"></span></div><b style="color:${ivColor(iv)};min-width:66px">${iv} · ${ivLabel(iv)}</b></div></td>
+      </tr>`).join('')}
+      </tbody></table>
+    </div>
+    <div class="panel">
+      <h3 style="margin-top:0">Informes y mapas generados</h3>
+      <p class="small muted">Se abren desde la carpeta <b>Crespo Real State</b> (mismo directorio que este CRM).</p>
+      <div class="toolbar">
+        <a class="act mini" href="Informe La Blanqueada - Apartamentos 1 dormitorio.pdf" target="_blank">PDF La Blanqueada</a>
+        <a class="act mini" href="Mapa La Blanqueada (interactivo).html" target="_blank">Mapa La Blanqueada</a>
+        <a class="act mini" href="Informe Maldonado - Oportunidades de negocio.pdf" target="_blank">PDF Maldonado</a>
+        <a class="act mini" href="Mapa Maldonado (interactivo).html" target="_blank">Mapa Maldonado</a>
+      </div>
+    </div>`;
+}
+
+/* -------------------- ZONAS -------------------- */
+function renderZonas(){
+  document.getElementById('v-zonas').innerHTML=`
+    <h2>Zonas <button class="act" style="float:right" onclick="editZona()">+ Nueva zona</button></h2>
+    <div class="panel"><table><thead><tr><th>Zona</th><th>Depto</th><th>Localidad</th><th>Tipología</th><th class="num">USD/m² ref.</th><th class="num">IV</th><th class="num">Props</th><th></th></tr></thead><tbody>
+    ${DB.zonas.map(z=>{ const iv=calcIV(DB.valorizacion[z.id]); const np=DB.propiedades.filter(p=>p.zona===z.id).length; return `<tr>
+      <td><b>${z.nombre}</b></td><td>${z.departamento}</td><td>${z.localidad||''}</td><td>${z.tipologia}</td>
+      <td class="num">${(+z.usd_m2_ref).toLocaleString('es-UY')}</td>
+      <td class="num"><span class="pill" style="background:${ivColor(iv)}">${iv}</span></td>
+      <td class="num">${np}</td>
+      <td><button class="act ghost mini" onclick="editZona('${z.id}')">Editar</button></td></tr>`;}).join('')}
+    </tbody></table></div>`;
+}
+function editZona(id){
+  const z = id? DB.zonas.find(z=>z.id===id) : {id:'z'+Date.now(),nombre:'',departamento:'',localidad:'',tipologia:'',usd_m2_ref:0,lat:-34.9,lon:-55.0,perfil:'',notas:''};
+  openDlg(id?'Editar zona':'Nueva zona', `
+    <div class="grid">
+      <div style="grid-column:1/-1"><label>Nombre</label><input id="f_nombre" value="${z.nombre}"></div>
+      <div><label>Departamento</label><input id="f_departamento" value="${z.departamento}"></div>
+      <div><label>Localidad</label><input id="f_localidad" value="${z.localidad||''}"></div>
+      <div><label>Tipología dominante</label><input id="f_tipologia" value="${z.tipologia}"></div>
+      <div><label>USD/m² referencia</label><input id="f_usd" type="number" value="${z.usd_m2_ref}"></div>
+      <div><label>Lat</label><input id="f_lat" type="number" step="0.0001" value="${z.lat}"></div>
+      <div><label>Lon</label><input id="f_lon" type="number" step="0.0001" value="${z.lon}"></div>
+      <div style="grid-column:1/-1"><label>Perfil</label><input id="f_perfil" value="${z.perfil||''}"></div>
+      <div style="grid-column:1/-1"><label>Notas</label><textarea id="f_notas" rows="2">${z.notas||''}</textarea></div>
+    </div>`, ()=>{
+      z.nombre=val('f_nombre'); z.departamento=val('f_departamento'); z.localidad=val('f_localidad');
+      z.tipologia=val('f_tipologia'); z.usd_m2_ref=+val('f_usd'); z.lat=+val('f_lat'); z.lon=+val('f_lon');
+      z.perfil=val('f_perfil'); z.notas=val('f_notas');
+      if(!id){ DB.zonas.push(z); DB.valorizacion[z.id]={obra:0,dens:0,transp:0,comercio:0,educ:0,infra:0,salud:0,natural:0,seg:0,demanda:0}; }
+      save(); renderZonas();
+    });
+}
+
+/* -------------------- PROPIEDADES -------------------- */
+let propFilter={zonas:[],tips:[],q:'',gestion:[],antig:[]}, propSort={k:'usd_m2',dir:1};
+function propPickZona(v){ propFilter.zonas=msPick(propFilter.zonas,v); renderProps(); }
+function propPickTip(v){ propFilter.tips=msPick(propFilter.tips,v); renderProps(); }
+function propPickGest(v){ propFilter.gestion=msPick(propFilter.gestion,v); renderProps(); }
+function propPickAntig(v){ propFilter.antig=msPick(propFilter.antig,v); renderProps(); }
+function gotoAntig(v){ propFilter={zonas:[...dashFilter.zonas],tips:[...dashFilter.tips],q:'',gestion:[],antig:[v]}; show('propiedades'); }
+function renderProps(){
+  const tips=[...new Set(DB.propiedades.map(p=>p.tipologia))];
+  const fz=propFilter.zonas, ft=propFilter.tips, fg=propFilter.gestion, fa=propFilter.antig;
+  let list=DB.propiedades.filter(p=>
+    (!fz.length||fz.includes(p.zona))&&(!ft.length||ft.includes(p.tipologia))&&
+    (!fg.length||fg.includes(p.gestion))&&(!fa.length||fa.includes(antigBucket(p)))&&
+    (!propFilter.q||(p.direccion+' '+p.estado+' '+(p.comentarios||'')).toLowerCase().includes(propFilter.q.toLowerCase())));
+  list.sort((a,b)=>{ let x=a[propSort.k],y=b[propSort.k]; if(typeof x==='string')return propSort.dir*(''+x).localeCompare(''+y); return propSort.dir*((+x||0)-(+y||0)); });
+  const money=v=>v?('US$ '+(+v).toLocaleString('es-UY')):'s/d';
+  const gestOpts=p=>GESTION.map(g=>`<option ${p.gestion===g.v?'selected':''}>${g.v}</option>`).join('');
+  document.getElementById('v-propiedades').innerHTML=`
+    <h2>Propiedades / comparables <button class="act" style="float:right" onclick="editProp()">+ Nueva propiedad</button></h2>
+    <div class="panel">
+      <div class="toolbar">
+        ${msBox('pz','Todas las zonas',DB.zonas.map(z=>({v:z.id,l:z.nombre})),fz,'propPickZona','renderProps',200)}
+        ${msBox('pt','Todas las tipologías',tips.filter(Boolean).map(t=>({v:t,l:t})),ft,'propPickTip','renderProps',195)}
+        ${msBox('pg','Toda la gestión',GESTION.map(g=>({v:g.v,l:g.v})),fg,'propPickGest','renderProps',180)}
+        ${msBox('pa','Toda la antigüedad',ANTIG.map(a=>({v:a.v,l:a.l})),fa,'propPickAntig','renderProps',185)}
+        <input style="max-width:200px;width:200px" placeholder="Buscar ubicación/comentario…" value="${esc(propFilter.q)}" oninput="propFilter.q=this.value;clearTimeout(window._t);window._t=setTimeout(renderProps,250)">
+        ${(fz.length||ft.length||fg.length||fa.length||propFilter.q)?`<button class="act ghost mini" onclick="propFilter={zonas:[],tips:[],q:'',gestion:[],antig:[]};renderProps()">✕ Limpiar</button>`:''}
+        <span class="small muted">${list.length} resultado(s)${(()=>{const st=statsUSD(list); return st.nv?` · mediana USD/m² <b>${st.med.toLocaleString('es-UY')}</b> (${st.mn.toLocaleString('es-UY')}–${st.mx.toLocaleString('es-UY')})`:'';})()}</span>
+      </div>
+      <div style="overflow:auto"><table><thead><tr>
+        ${[['direccion','Ubicación'],['zona','Zona'],['tipologia','Tipología'],['m2','m²'],['precio_pub','Precio pub.'],['descuento','Desc.'],['precio_real','Precio real'],['usd_m2','USD/m²'],['fecha_aviso','Fecha aviso'],['estado','Estado']].map(([k,l])=>`<th onclick="sortProp('${k}')">${l}</th>`).join('')}<th>Comentarios</th><th>Gestión</th><th>Seguimiento</th><th>Aviso</th><th></th>
+      </tr></thead><tbody>
+      ${list.map(p=>`<tr>
+        <td>${p.direccion}</td><td>${zoneName(p.zona)}</td><td>${p.tipologia}</td>
+        <td class="num">${p.m2||'s/d'}</td>
+        <td class="num">${money(p.precio_pub)}</td>
+        <td class="num">${(p.descuento!==''&&p.descuento!==undefined&&p.descuento!==null)?('−'+p.descuento+'%'):'s/d'}</td>
+        <td class="num">${p.precio_real?money(p.precio_real):'s/d'}</td>
+        <td class="num"><b>${p.usd_m2||'s/d'}</b></td>
+        <td>${p.fecha_aviso||'s/d'}</td>
+        <td>${p.estado||''}</td>
+        <td><input style="min-width:160px" value="${(p.comentarios||'').replace(/"/g,'&quot;')}" placeholder="ej: con garaje, esquina…" onchange="setCampo('${p.id}','comentarios',this.value)"></td>
+        <td><select style="min-width:140px;border-color:${gColor(p.gestion)};color:${gColor(p.gestion)};font-weight:700" onchange="setCampo('${p.id}','gestion',this.value)">${gestOpts(p)}</select></td>
+        <td><button class="act ghost mini" style="min-width:150px;max-width:200px;text-align:left;white-space:normal" onclick="openFicha('${p.id}')">🗂 ${p.proxima_accion? esc(p.proxima_accion).slice(0,28) : 'Ficha / acciones'}${(p.acciones&&p.acciones.length)?` · ${p.acciones.length}✓`:''}</button>${p.fecha_seguimiento?`<div class="small muted" style="margin-top:3px">📅 ${p.fecha_seguimiento}</div>`:''}</td>
+        <td>${p.url?`<a href="${p.url}" target="_blank">ver</a>`:''}</td>
+        <td><button class="act ghost mini" onclick="editProp('${p.id}')">✎</button></td></tr>`).join('')}
+      </tbody></table></div>
+    </div>`;
+}
+function sortProp(k){ propSort.dir = propSort.k===k? -propSort.dir : 1; propSort.k=k; renderProps(); }
+function editProp(id){
+  const p = id? DB.propiedades.find(p=>p.id===id) : {id:'P'+Date.now(),zona:(DB.zonas[0]&&DB.zonas[0].id)||'',tipologia:'',direccion:'',m2:'',precio_pub:'',descuento:'',precio_real:'',usd_m2:'',fecha_aviso:'',estado:'',portal:'InfoCasas',url:'',comentarios:'',gestion:'Sin clasificar',proxima_accion:'',fecha_seguimiento:'',fecha_alta:hoyStr()};
+  openDlg(id?'Editar propiedad':'Nueva propiedad', `
+    <div class="grid">
+      <div><label>Zona</label><select id="f_zona">${DB.zonas.map(z=>`<option value="${z.id}" ${p.zona===z.id?'selected':''}>${z.nombre}</option>`).join('')}</select></div>
+      <div><label>Tipología</label><input id="f_tip" value="${p.tipologia}"></div>
+      <div style="grid-column:1/-1"><label>Ubicación / dirección</label><input id="f_dir" value="${p.direccion}"></div>
+      <div><label>m²</label><input id="f_m2" value="${p.m2}"></div>
+      <div><label>Precio publicado (USD)</label><input id="f_pub" type="number" value="${p.precio_pub}"></div>
+      <div><label>Descuento %</label><input id="f_desc" value="${p.descuento}"></div>
+      <div><label>Precio real (USD)</label><input id="f_real" type="number" value="${p.precio_real}"></div>
+      <div><label>USD/m²</label><input id="f_usd" value="${p.usd_m2}"></div>
+      <div><label>Fecha aviso</label><input id="f_fecha" type="date" value="${p.fecha_aviso}"></div>
+      <div><label>Alta en CRM (no es la fecha del aviso)</label><input id="f_falta" type="date" value="${p.fecha_alta||''}"></div>
+      <div><label>Estado edilicio / ubicación</label><input id="f_estado" value="${p.estado}"></div>
+      <div><label>Gestión</label><select id="f_gestion">${GESTION.map(g=>`<option ${p.gestion===g.v?'selected':''}>${g.v}</option>`).join('')}</select></div>
+      <div><label>Próxima acción</label><input id="f_pacc" value="${(p.proxima_accion||'').replace(/"/g,'&quot;')}" placeholder="ej: llamar inmobiliaria, visitar"></div>
+      <div><label>Fecha de seguimiento</label><input id="f_fseg" type="date" value="${p.fecha_seguimiento||''}"></div>
+      <div style="grid-column:1/-1"><label>Comentarios (garaje, esquina/medial, extras, contacto…)</label><textarea id="f_com" rows="2">${p.comentarios||''}</textarea></div>
+      <div style="grid-column:1/-1"><label>URL del aviso</label><input id="f_url" value="${p.url}"></div>
+    </div>
+    <p class="small muted">Si cargás precio publicado + descuento %, se recalcula precio real y USD/m² (podés sobrescribir el precio real a mano).</p>`, ()=>{
+      p.zona=val('f_zona'); p.tipologia=val('f_tip'); p.direccion=val('f_dir'); p.m2=val('f_m2');
+      p.precio_pub=val('f_pub'); p.descuento=val('f_desc'); p.fecha_aviso=val('f_fecha'); p.estado=val('f_estado');
+      p.url=val('f_url'); p.comentarios=val('f_com'); p.gestion=val('f_gestion'); p.proxima_accion=val('f_pacc'); p.fecha_seguimiento=val('f_fseg');
+      p.fecha_alta=val('f_falta');
+      const pub=+p.precio_pub, d=+p.descuento, m2=+p.m2, realManual=val('f_real');
+      if(realManual){ p.precio_real=+realManual; }
+      else if(pub&&val('f_desc')!==''&&!isNaN(d)){ p.precio_real=Math.round(pub*(1-d/100)); }
+      else if(pub){ p.precio_real=pub; }
+      if(m2 && p.precio_real){ p.usd_m2=Math.round(p.precio_real/m2*10)/10; } else if(val('f_usd')){ p.usd_m2=+val('f_usd'); }
+      if(!id) DB.propiedades.push(p);
+      save(); renderProps();
+    });
+}
+
+/* -------------------- VALORIZACIÓN -------------------- */
+let valZona=null;
+function renderValor(){
+  if(!valZona) valZona=DB.zonas[0].id;
+  const sc=DB.valorizacion[valZona]||{}; const iv=calcIV(sc);
+  document.getElementById('v-valorizacion').innerHTML=`
+    <h2>Factores de valorización</h2>
+    <div class="panel">
+      <div class="toolbar">
+        <label style="margin:0">Zona:</label>
+        <select style="max-width:260px" onchange="valZona=this.value;renderValor()">${DB.zonas.map(z=>`<option value="${z.id}" ${valZona===z.id?'selected':''}>${z.nombre}</option>`).join('')}</select>
+        <span style="margin-left:auto"></span>
+        <div style="text-align:right"><div class="small muted">Índice de Valorización</div><div style="font-size:26px;font-weight:800;color:${ivColor(iv)}">${iv} <span style="font-size:13px">/100 · ${ivLabel(iv)}</span></div></div>
+      </div>
+      <div class="iv-bar" style="height:14px;margin-bottom:14px"><span style="width:${iv}%;background:${ivColor(iv)}"></span></div>
+      ${FACTORES.map(f=>{ const s=sc[f.k]||0; return `<div class="factor-row">
+        <div><b>${f.n}</b> <span class="small muted">(peso ${f.w}%)</span></div>
+        <div style="text-align:center;font-weight:700;color:${ivColor(iv)}">${s}</div>
+        <input type="range" min="0" max="5" value="${s}" oninput="setScore('${f.k}',this.value)">
+        <div class="small muted">${(f.w*s/5).toFixed(1)} pts</div>
+      </div>`;}).join('')}
+      <p class="small muted" style="margin-top:12px">Fórmula: IV = Σ(peso × score/5). Editá los deslizadores; se guarda automáticamente. Marco completo en <code>docs/factores-valorizacion.md</code>.</p>
+    </div>`;
+}
+function setScore(k,v){ if(!DB.valorizacion[valZona]) DB.valorizacion[valZona]={}; DB.valorizacion[valZona][k]=+v; save(); renderValor(); }
+
+/* -------------------- HISTÓRICO -------------------- */
+function tipoBase(t){ if(/Apartamento|Monoambiente/i.test(t)) return 'Apartamento'; if(/Casa/i.test(t)) return 'Casa'; if(/Terreno/i.test(t)) return 'Terreno'; if(/Chacra|Campo/i.test(t)) return 'Rural'; return t; }
+function median(a){ if(!a.length) return 0; const s=[...a].sort((x,y)=>x-y); const m=Math.floor(s.length/2); return s.length%2? s[m] : (s[m-1]+s[m])/2; }
+const HIST_NOTES={
+  zBlanqueada:'apreciación sostenida (~4% anual real) impulsada por obra nueva bajo Ley de Vivienda Promovida y demanda de alquiler que fija la UCU; la dispersión separa unidades a reciclar (piso) de obra nueva/esquina (techo).',
+  zSanCarlos:'dos submercados de suelo: lotes urbanos vs. fracciones; la brecha refleja el costo pendiente de amanzanamiento, mensura e infraestructura. Driver de fondo: vivienda para la mano de obra de Punta del Este y el corredor Ruta 9/39.',
+  zMaldonado:'valores sostenidos por demanda permanente (no estacional); el nuevo shopping y la terminal empujan el techo. Driver: crecimiento poblacional y empleo todo el año.',
+  zPiriapolis:'el suelo separa interior/sierra (entrada baja) de costa consolidada; la amenidad natural (costa/sierra) es el factor dominante y la población permanente creciente sostiene la valorización.',
+  zPuntaEste:'mercado premium y estacional con gran dispersión (frente al mar vs. stock antiguo). Driver: demanda regional (Argentina/Brasil) y tipo de cambio; ajuste legal −8%.',
+  zPanAzucar:'suelo de entrada muy baja sobre corredor Ruta 9; driver logístico/vivienda, con menor liquidez.'
+};
+function histNote(zid,tipo,s){ const base=HIST_NOTES[zid]||'evolución según la oferta disponible.'; let disp=''; if(s.mx&&s.mn){ const r=s.mx/s.mn; disp=` En esta muestra de ${tipo.toLowerCase()}, el USD/m² va de ${s.mn} a ${s.mx} (${r>=2?'amplia':'moderada'} dispersión; mediana ${s.med}).`; } return base+disp; }
+function topDrivers(zid){ const sc=DB.valorizacion[zid]||{}; return FACTORES.map(f=>({n:f.n,c:f.w*(sc[f.k]||0)/5})).sort((a,b)=>b.c-a.c).slice(0,3).map(x=>x.n).join(' · '); }
+function barChartH(items){
+  const W=680,left=210,rowH=19,top=8,plotW=W-left-46;
+  const max=(Math.max.apply(null,items.map(i=>i.v))||1)*1.08, med=median(items.map(i=>i.v)), H=top*2+items.length*rowH+4, mx=left+med/max*plotW;
+  let s=`<svg viewBox="0 0 ${W} ${H}" width="100%" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI,Arial" font-size="10">`;
+  s+=`<line x1="${mx.toFixed(1)}" y1="${top-2}" x2="${mx.toFixed(1)}" y2="${H-4}" stroke="#1F3864" stroke-width="1.2" stroke-dasharray="4 3"/><text x="${mx.toFixed(1)}" y="${top+6}" font-size="9" fill="#1F3864" text-anchor="middle">mediana ${Math.round(med)}</text>`;
+  items.forEach((it,idx)=>{ const y=top+idx*rowH+6, w=Math.max(1,it.v/max*plotW), col=it.v<med?'#8EAADB':(it.v>med*1.15?'#1F3864':'#2E5496');
+    s+=`<text x="${left-6}" y="${y+9}" text-anchor="end" fill="#1a2230">${esc(it.label).slice(0,32)}</text><rect x="${left}" y="${y+1}" width="${w.toFixed(1)}" height="11" rx="2" fill="${col}"/><text x="${(left+w+4).toFixed(1)}" y="${y+9}" fill="#5b6472">${it.v}</text>`; });
+  return s+'</svg>';
+}
+/* -------------------- HISTÓRICO MALDONADO (5 años) + PROYECCIÓN (5 años) --------------------
+   Cada punto lleva su fuente. Anclas públicas reales:
+   · ANV/CIU vivienda promovida Maldonado: ago-2022 US$1.934 · año móvil 2023 US$1.969 (+6,9%) · set-2025 US$2.062 (+13,8% ⇒ 2024 ≈ 1.812)
+   · Nacional promovida 2025: US$2.387 (+7,2%) — referencia de contexto
+   · Punta del Este: prensa/informes de mercado (2022 ~US$2.000; temp. 2023-24 US$2.700–3.100)
+   · TERRENOS: NO existe índice público de suelo → serie retropolada desde la mediana ACM 2026 de esta base. Es estimación declarada, editable. */
+const HIST_MALDONADO=[
+  {zona:'zMaldonado',tipologia:'Apto 2d',anio:2021,usd_m2:1700,fuente:'estim. declarada (retropolada)'},
+  {zona:'zMaldonado',tipologia:'Apto 2d',anio:2022,usd_m2:1934,fuente:'CIU/ANV (ago-2022)'},
+  {zona:'zMaldonado',tipologia:'Apto 2d',anio:2023,usd_m2:1969,fuente:'ANV año móvil 2023'},
+  {zona:'zMaldonado',tipologia:'Apto 2d',anio:2024,usd_m2:1812,fuente:'derivado ANV (−/+13,8% s/2025)'},
+  {zona:'zMaldonado',tipologia:'Apto 2d',anio:2025,usd_m2:2062,fuente:'ANV set-2025'},
+  {zona:'zMaldonado',tipologia:'Apto 2d',anio:2026,usd_m2:1964,fuente:'ACM real (mediana base)'},
+  {zona:'zPuntaEste',tipologia:'Apto',anio:2021,usd_m2:2300,fuente:'estim. declarada'},
+  {zona:'zPuntaEste',tipologia:'Apto',anio:2022,usd_m2:2450,fuente:'estim. declarada (prensa)'},
+  {zona:'zPuntaEste',tipologia:'Apto',anio:2023,usd_m2:2700,fuente:'informes de mercado (temp. 23-24)'},
+  {zona:'zPuntaEste',tipologia:'Apto',anio:2024,usd_m2:2900,fuente:'informes de mercado (temp. 23-24)'},
+  {zona:'zPuntaEste',tipologia:'Apto',anio:2025,usd_m2:3050,fuente:'estim. declarada'},
+  {zona:'zPuntaEste',tipologia:'Apto',anio:2026,usd_m2:3000,fuente:'ACM real (ref. de zona)'},
+  {zona:'zSanCarlos',tipologia:'Terreno',anio:2021,usd_m2:79,fuente:'estim. declarada (sin índice de suelo)'},
+  {zona:'zSanCarlos',tipologia:'Terreno',anio:2022,usd_m2:85,fuente:'estim. declarada (sin índice de suelo)'},
+  {zona:'zSanCarlos',tipologia:'Terreno',anio:2023,usd_m2:91,fuente:'estim. declarada (sin índice de suelo)'},
+  {zona:'zSanCarlos',tipologia:'Terreno',anio:2024,usd_m2:97,fuente:'estim. declarada (sin índice de suelo)'},
+  {zona:'zSanCarlos',tipologia:'Terreno',anio:2025,usd_m2:104,fuente:'estim. declarada (sin índice de suelo)'},
+  {zona:'zSanCarlos',tipologia:'Terreno',anio:2026,usd_m2:111,fuente:'ACM real (mediana terreno urbano)'},
+  {zona:'zPiriapolis',tipologia:'Terreno',anio:2021,usd_m2:100,fuente:'estim. declarada (sin índice de suelo)'},
+  {zona:'zPiriapolis',tipologia:'Terreno',anio:2022,usd_m2:107,fuente:'estim. declarada (sin índice de suelo)'},
+  {zona:'zPiriapolis',tipologia:'Terreno',anio:2023,usd_m2:115,fuente:'estim. declarada (sin índice de suelo)'},
+  {zona:'zPiriapolis',tipologia:'Terreno',anio:2024,usd_m2:123,fuente:'estim. declarada (sin índice de suelo)'},
+  {zona:'zPiriapolis',tipologia:'Terreno',anio:2025,usd_m2:132,fuente:'estim. declarada (sin índice de suelo)'},
+  {zona:'zPiriapolis',tipologia:'Terreno',anio:2026,usd_m2:141,fuente:'ACM real (mediana terreno costa)'},
+  {zona:'zPanAzucar',tipologia:'Terreno',anio:2021,usd_m2:20,fuente:'estim. declarada (sin índice de suelo)'},
+  {zona:'zPanAzucar',tipologia:'Terreno',anio:2022,usd_m2:21,fuente:'estim. declarada (sin índice de suelo)'},
+  {zona:'zPanAzucar',tipologia:'Terreno',anio:2023,usd_m2:22,fuente:'estim. declarada (sin índice de suelo)'},
+  {zona:'zPanAzucar',tipologia:'Terreno',anio:2024,usd_m2:23,fuente:'estim. declarada (sin índice de suelo)'},
+  {zona:'zPanAzucar',tipologia:'Terreno',anio:2025,usd_m2:24,fuente:'estim. declarada (sin índice de suelo)'},
+  {zona:'zPanAzucar',tipologia:'Terreno',anio:2026,usd_m2:25,fuente:'ACM real (ref. de zona)'},
+];
+function loadHistMaldonado(force){ let add=0; HIST_MALDONADO.forEach(h=>{ const i=DB.historico.findIndex(x=>x.zona===h.zona&&x.anio===h.anio);
+  if(i<0){ DB.historico.push(Object.assign({},h)); add++; } else if(force){ DB.historico[i]=Object.assign({},h); add++; } });
+  if(add) save(); return add; }
+function histMaldonadoBtn(){ const n=loadHistMaldonado(true); alert('Serie histórica de Maldonado cargada/actualizada: '+n+' punto(s) 2021-2026.\nPodés editar cualquier valor con el lápiz de la tabla.'); renderHistorico(); }
+
+/* proyección: escenarios anuales sobre el último valor real */
+let proyCfg={cons:2,base:3.5,opt:6,años:5};
+function setProy(k,v){ const n=parseFloat((''+v).replace(',','.')); if(!isNaN(n)) proyCfg[k]=n; renderHistorico(); }
+function cagr(serie){ if(serie.length<2) return null; const a=serie[0], b=serie[serie.length-1], n=b.anio-a.anio; if(!n||!a.usd_m2) return null; return (Math.pow(b.usd_m2/a.usd_m2,1/n)-1)*100; }
+function proyectar(serie,tasa,años){ if(!serie.length) return []; const last=serie[serie.length-1]; const out=[]; let v=+last.usd_m2;
+  for(let i=1;i<=años;i++){ v=v*(1+tasa/100); out.push({anio:last.anio+i, usd_m2:Math.round(v*10)/10}); } return out; }
+function lineChartProj(serie,años){
+  const cons=proyectar(serie,proyCfg.cons,años), base=proyectar(serie,proyCfg.base,años), opt=proyectar(serie,proyCfg.opt,años);
+  const W=680,H=210,left=46,top=18,plotW=W-left-30,plotH=H-top-30;
+  const years=serie.map(s=>s.anio).concat(base.map(s=>s.anio));
+  const all=serie.map(s=>+s.usd_m2).concat(cons.map(s=>s.usd_m2),opt.map(s=>s.usd_m2));
+  const min=Math.min.apply(null,all)*0.94, max=Math.max.apply(null,all)*1.06, span=(max-min)||1;
+  const x=a=>left+(years.length<2?plotW/2:(a-years[0])/(years[years.length-1]-years[0])*plotW), y=v=>top+plotH-(v-min)/span*plotH;
+  const pt=(arr)=>arr.map(s=>x(s.anio).toFixed(1)+','+y(s.usd_m2).toFixed(1)).join(' ');
+  const lastR=serie[serie.length-1];
+  const band=[lastR].concat(opt).map(s=>x(s.anio).toFixed(1)+','+y(s.usd_m2).toFixed(1)).join(' ')+' '+[...cons].reverse().concat([lastR]).map(s=>x(s.anio).toFixed(1)+','+y(s.usd_m2).toFixed(1)).join(' ');
+  let sv=`<svg viewBox="0 0 ${W} ${H}" width="100%" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI,Arial" font-size="9"><rect width="${W}" height="${H}" fill="#fff"/>`;
+  sv+=`<line x1="${x(lastR.anio).toFixed(1)}" y1="${top-4}" x2="${x(lastR.anio).toFixed(1)}" y2="${top+plotH}" stroke="#8EAADB" stroke-width="1" stroke-dasharray="3 3"/>`;
+  sv+=`<polygon points="${band}" fill="#D9E1F2" opacity=".75"/>`;
+  sv+=`<polyline points="${pt([lastR].concat(base))}" fill="none" stroke="#0F6FC6" stroke-width="2" stroke-dasharray="6 4"/>`;
+  sv+=`<polyline points="${pt(serie)}" fill="none" stroke="#2E5496" stroke-width="2.4"/>`;
+  serie.forEach(s=>{ sv+=`<circle cx="${x(s.anio).toFixed(1)}" cy="${y(s.usd_m2).toFixed(1)}" r="3.2" fill="#0F6FC6"/><text x="${x(s.anio).toFixed(1)}" y="${(y(s.usd_m2)-7).toFixed(1)}" text-anchor="middle" font-weight="700" fill="#1F3864">${s.usd_m2}</text><text x="${x(s.anio).toFixed(1)}" y="${H-8}" text-anchor="middle" fill="#5b6472">${s.anio}</text>`; });
+  base.forEach((s,i)=>{ sv+=`<circle cx="${x(s.anio).toFixed(1)}" cy="${y(s.usd_m2).toFixed(1)}" r="2.6" fill="#8EAADB"/><text x="${x(s.anio).toFixed(1)}" y="${H-8}" text-anchor="middle" fill="#8EAADB">${s.anio}</text>${i===base.length-1?`<text x="${x(s.anio).toFixed(1)}" y="${(y(s.usd_m2)-7).toFixed(1)}" text-anchor="middle" font-weight="700" fill="#0F6FC6">${Math.round(s.usd_m2)}</text>`:''}`; });
+  sv+=`<text x="${left}" y="${top-6}" fill="#2E5496" font-weight="700">— histórico (real/declarado)</text><text x="${left+170}" y="${top-6}" fill="#0F6FC6" font-weight="700">- - proyección base ${proyCfg.base}%</text><text x="${left+340}" y="${top-6}" fill="#8EAADB" font-weight="700">▨ banda ${proyCfg.cons}% – ${proyCfg.opt}%</text>`;
+  return sv+'</svg>';
+}
+function proyTabla(serie,años){
+  const cons=proyectar(serie,proyCfg.cons,años), base=proyectar(serie,proyCfg.base,años), opt=proyectar(serie,proyCfg.opt,años);
+  const f=v=>Math.round(v).toLocaleString('es-UY');
+  return `<table style="margin-top:6px"><thead><tr><th>Año</th><th class="num">Conservador (${proyCfg.cons}%)</th><th class="num">Base (${proyCfg.base}%)</th><th class="num">Optimista (${proyCfg.opt}%)</th></tr></thead><tbody>
+    ${base.map((b,i)=>`<tr><td><b>${b.anio}</b></td><td class="num">${f(cons[i].usd_m2)}</td><td class="num"><b>${f(b.usd_m2)}</b></td><td class="num">${f(opt[i].usd_m2)}</td></tr>`).join('')}
+    </tbody></table>`;
+}
+function lineChartYears(series){
+  const W=680,H=170,left=52,top=16,plotW=W-left-24,plotH=H-top-26,vals=series.map(s=>s.usd_m2),min=Math.min.apply(null,vals)*0.96,max=Math.max.apply(null,vals)*1.04,span=(max-min)||1;
+  const x=i=>left+(series.length<2?plotW/2:i/(series.length-1)*plotW), y=v=>top+plotH-(v-min)/span*plotH;
+  let sv=`<svg viewBox="0 0 ${W} ${H}" width="100%" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI,Arial" font-size="9"><rect width="${W}" height="${H}" fill="#fff"/><polyline points="${series.map((s,i)=>x(i).toFixed(1)+','+y(s.usd_m2).toFixed(1)).join(' ')}" fill="none" stroke="#2E5496" stroke-width="2.4"/>`;
+  series.forEach((s,i)=>{ sv+=`<circle cx="${x(i).toFixed(1)}" cy="${y(s.usd_m2).toFixed(1)}" r="3.2" fill="#0F6FC6"/><text x="${x(i).toFixed(1)}" y="${(y(s.usd_m2)-7).toFixed(1)}" text-anchor="middle" font-weight="700" fill="#1F3864">${s.usd_m2}</text><text x="${x(i).toFixed(1)}" y="${H-8}" text-anchor="middle" fill="#5b6472">${s.anio}</text>`; });
+  return sv+'</svg>';
+}
+let histFilter={zonas:[],deptos:[]};
+function histPickZona(v){ histFilter.zonas=msPick(histFilter.zonas,v); renderHistorico(); }
+function histPickDepto(v){ histFilter.deptos=msPick(histFilter.deptos,v); renderHistorico(); }
+function renderHistorico(){
+  const deptos=[...new Set(DB.zonas.map(z=>z.departamento))].filter(Boolean).sort();
+  const zonasOk=DB.zonas.filter(z=>(!histFilter.deptos.length||histFilter.deptos.includes(z.departamento))&&(!histFilter.zonas.length||histFilter.zonas.includes(z.id))).map(z=>z.id);
+  const groups={};
+  DB.propiedades.filter(p=>zonasOk.includes(p.zona)).forEach(p=>{ const k=p.zona+'||'+tipoBase(p.tipologia); if(!groups[k]) groups[k]={zona:p.zona,tipo:tipoBase(p.tipologia),items:[]}; groups[k].items.push(p); });
+  /* zonas con serie histórica pero sin propiedades cargadas también entran */
+  zonasOk.forEach(zid=>{ if(DB.historico.some(h=>h.zona===zid) && !Object.keys(groups).some(k=>groups[k].zona===zid)){ const z=DB.zonas.find(x=>x.id===zid); groups[zid+'||—']={zona:zid,tipo:tipoBase(z.tipologia||''),items:[]}; } });
+  const keys=Object.keys(groups).sort((a,b)=> zoneName(groups[a].zona).localeCompare(zoneName(groups[b].zona)) || groups[a].tipo.localeCompare(groups[b].tipo));
+  const años=proyCfg.años;
+  let html=`<h2>Histórico por zona y tipología</h2>
+    <div class="panel">
+      <div class="toolbar">
+        ${msBox('hd','Todos los departamentos',deptos.map(d=>({v:d,l:d})),histFilter.deptos,'histPickDepto','renderHistorico',215)}
+        ${msBox('hz','Todas las zonas',DB.zonas.map(z=>({v:z.id,l:z.nombre+' ('+z.departamento+')'})),histFilter.zonas,'histPickZona','renderHistorico',230)}
+        ${(histFilter.deptos.length||histFilter.zonas.length)?`<button class="act ghost mini" onclick="histFilter={zonas:[],deptos:[]};renderHistorico()">✕ Limpiar</button>`:''}
+        <button class="act ghost" onclick="histMaldonadoBtn()">↻ Cargar serie 5 años de Maldonado</button>
+        <button class="act" onclick="refreshBase()">↻ Actualizar base (avisos nuevos)</button>
+      </div>
+      <div class="toolbar" style="margin-bottom:0">
+        <b class="small">Proyección ${años} años · tasas anuales:</b>
+        <label class="small" style="display:inline;margin:0">conservador <input style="width:62px;display:inline-block" type="number" step="0.5" value="${proyCfg.cons}" onchange="setProy('cons',this.value)">%</label>
+        <label class="small" style="display:inline;margin:0">base <input style="width:62px;display:inline-block" type="number" step="0.5" value="${proyCfg.base}" onchange="setProy('base',this.value)">%</label>
+        <label class="small" style="display:inline;margin:0">optimista <input style="width:62px;display:inline-block" type="number" step="0.5" value="${proyCfg.opt}" onchange="setProy('opt',this.value)">%</label>
+        <span class="small muted">La proyección parte del <b>último año real</b> de cada serie y compone la tasa. Base 3,5% = criterio del estudio.</span>
+      </div>
+    </div>`;
+  if(!keys.length) html+=`<div class="panel"><p class="small muted">No hay zonas para el filtro elegido.</p></div>`;
+  keys.forEach(k=>{ const g=groups[k], n=g.items.length, vals=g.items.map(p=>+p.usd_m2).filter(v=>v>0);
+    const items=g.items.filter(p=>+p.usd_m2>0).map(p=>({label:p.direccion,v:Math.round(+p.usd_m2*10)/10})).sort((a,b)=>a.v-b.v);
+    const med=Math.round(median(vals)), mn=vals.length?Math.round(Math.min.apply(null,vals)):0, mx=vals.length?Math.round(Math.max.apply(null,vals)):0, avg=vals.length?Math.round(vals.reduce((a,b)=>a+b,0)/vals.length):0;
+    const zserie=DB.historico.filter(h=>h.zona===g.zona).sort((a,b)=>a.anio-b.anio);
+    const cg=cagr(zserie), estim=zserie.filter(h=>/estim/i.test(h.fuente||'')).length;
+    html+=`<div class="panel">
+      <h3 style="margin-top:0">${zoneName(g.zona)} · ${g.tipo} <span class="pill" style="background:${n<10?'#8892a0':'#0F6FC6'};margin-left:6px">${n} prospecto${n===1?'':'s'}</span></h3>
+      ${n&&n<10?`<div class="box" style="border-left:4px solid #1F3864;background:#eef2f9;margin:6px 0"><b>⚠ Muestra de ${n} (&lt; 10):</b> la muestra <b>no es del todo representativa</b>; los valores son indicativos y se robustecen al actualizar la base.</div>`:''}
+      ${vals.length?`<div class="small muted" style="margin:2px 0 4px">USD/m²: mín <b>${mn}</b> · mediana <b>${med}</b> · promedio <b>${avg}</b> · máx <b>${mx}</b></div>${barChartH(items)}`:''}
+      ${zserie.length>1?`
+        <h4 style="color:var(--azul-medio);font-size:12px;margin:14px 0 2px;border:0">Serie ${zserie[0].anio}–${zserie[zserie.length-1].anio} y proyección ${zserie[zserie.length-1].anio+1}–${zserie[zserie.length-1].anio+años} (USD/m²)</h4>
+        ${lineChartProj(zserie,años)}
+        <div class="small muted" style="margin:2px 0 6px">Variación acumulada ${zserie[0].anio}→${zserie[zserie.length-1].anio}: <b>${Math.round((zserie[zserie.length-1].usd_m2/zserie[0].usd_m2-1)*100)}%</b> · CAGR observado: <b>${cg===null?'s/d':cg.toFixed(1)+'%'}</b> anual${cg!==null?` · si se mantuviera el CAGR, ${zserie[zserie.length-1].anio+años} ≈ <b>${Math.round(zserie[zserie.length-1].usd_m2*Math.pow(1+cg/100,años)).toLocaleString('es-UY')}</b> USD/m²`:''}</div>
+        ${proyTabla(zserie,años)}
+        <h4 style="color:var(--azul-medio);font-size:12px;margin:14px 0 2px;border:0">Puntos de la serie y su fuente <span class="small muted" style="font-weight:400">· editables</span></h4>
+        <table><thead><tr><th>Año</th><th class="num">USD/m²</th><th>Fuente</th><th></th></tr></thead><tbody>
+        ${zserie.map(h=>{ const i=DB.historico.indexOf(h); return `<tr><td><b>${h.anio}</b></td>
+          <td class="num"><input style="width:90px;text-align:right" type="number" step="0.1" value="${h.usd_m2}" onchange="setHist(${i},'usd_m2',this.value)"></td>
+          <td><input value="${esc(h.fuente||'')}" onchange="setHist(${i},'fuente',this.value)"></td>
+          <td><button class="act ghost mini" onclick="delHist(${i})">✕</button></td></tr>`; }).join('')}
+        </tbody></table>
+        <div class="toolbar" style="margin:8px 0 0"><button class="act ghost mini" onclick="addHist('${g.zona}','${esc(zserie[0].tipologia||g.tipo)}')">+ Agregar año</button>
+        ${estim?`<span class="small muted">⚠ ${estim} de ${zserie.length} puntos son <b>estimación declarada</b> (no dato publicado). Reemplazalos cuando tengas la fuente.</span>`:''}</div>
+      ` : `<p class="small muted" style="margin-top:8px">Sin serie histórica cargada para esta zona. ${/Maldonado/.test((DB.zonas.find(z=>z.id===g.zona)||{}).departamento||'')?'Tocá <b>“Cargar serie 5 años de Maldonado”</b> arriba.':'Agregá puntos con el botón de abajo.'} <button class="act ghost mini" onclick="addHist('${g.zona}','${esc(g.tipo)}')">+ Agregar año</button></p>`}
+      <p style="margin:10px 0 2px"><b>Qué muestra:</b> ${histNote(g.zona,g.tipo,{mn,med,mx,avg,n})}</p>
+      <p style="margin:2px 0"><b>Variables que explican el cambio (top factores de valorización):</b> ${topDrivers(g.zona)||'s/d'}.</p>
+    </div>`; });
+  document.getElementById('v-historico').innerHTML=html;
+}
+function setHist(i,campo,valor){ const h=DB.historico[i]; if(!h) return; h[campo]= campo==='usd_m2'? (+valor||0) : valor; save(); if(campo==='usd_m2') renderHistorico(); }
+function delHist(i){ if(!confirm('¿Borrar este punto de la serie?')) return; DB.historico.splice(i,1); save(); renderHistorico(); }
+function addHist(zona,tipologia){
+  const anio=new Date().getFullYear();
+  openDlg('Agregar punto histórico', `<div class="grid">
+    <div><label>Zona</label><select id="h_zona">${DB.zonas.map(z=>`<option value="${z.id}" ${z.id===zona?'selected':''}>${z.nombre}</option>`).join('')}</select></div>
+    <div><label>Tipología</label><input id="h_tip" value="${esc(tipologia||'')}"></div>
+    <div><label>Año</label><input id="h_anio" type="number" value="${anio}"></div>
+    <div><label>USD/m²</label><input id="h_usd" type="number" step="0.1"></div>
+    <div style="grid-column:1/-1"><label>Fuente (obligatoria: de dónde sale el dato)</label><input id="h_fuente" placeholder="ej: ANV set-2025 · ACM real · estim. declarada"></div>
+  </div>`, ()=>{
+    const u=+val('h_usd'); if(!u){ alert('Falta el USD/m².'); return; }
+    DB.historico.push({zona:val('h_zona'),tipologia:val('h_tip'),anio:+val('h_anio'),usd_m2:u,fuente:val('h_fuente')||'s/d'});
+    save(); renderHistorico();
+  });
+}
+
+/* -------------------- MAPA -------------------- */
+function renderMap(){
+  if(!mapObj){ mapObj=L.map('map').setView([-34.88,-55.4],8); L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; OpenStreetMap · Crespo Real State'}).addTo(mapObj); }
+  if(window._mk) window._mk.forEach(m=>mapObj.removeLayer(m)); window._mk=[];
+  const pts=[];
+  DB.zonas.forEach(z=>{ if(z.lat&&z.lon){ const iv=calcIV(DB.valorizacion[z.id]); const np=DB.propiedades.filter(p=>p.zona===z.id).length;
+    const icon=L.divIcon({className:'',html:`<div style="background:${ivColor(iv)};color:#fff;width:32px;height:32px;border-radius:50%;border:3px solid #fff;box-shadow:0 1px 5px rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:12px">${iv}</div>`,iconSize:[32,32],iconAnchor:[16,16],popupAnchor:[0,-16]});
+    const m=L.marker([z.lat,z.lon],{icon}).bindPopup(`<b>${z.nombre}</b> · ${z.departamento}<br>${z.tipologia}<br>USD/m² ref: <b>${(+z.usd_m2_ref).toLocaleString('es-UY')}</b><br>IV: <b style="color:${ivColor(iv)}">${iv} (${ivLabel(iv)})</b><br>${np} propiedad(es) en base`).addTo(mapObj);
+    window._mk.push(m); pts.push([z.lat,z.lon]); }});
+  if(pts.length) mapObj.fitBounds(L.latLngBounds(pts),{padding:[50,50]});
+  setTimeout(()=>mapObj.invalidateSize(),80);
+}
+
+/* -------------------- BASE DE DATOS -------------------- */
+function renderBase(){
+  const _sb=sbCfg();
+  document.getElementById('v-base').innerHTML=`
+    <h2>Base de datos</h2>
+    <div class="panel">
+      <h3 style="margin-top:0">☁ Nube (Supabase) ${_sb.url?'<span class="pill" style="background:#0F6FC6">conectado</span>':'<span class="pill" style="background:#8892a0">sin configurar</span>'}</h3>
+      <p class="small muted">Base en la nube (multi-dispositivo) + auto-refresh programado. Seguí el runbook <code>MIGRACION_SUPABASE.md</code>. No pega la anon key en ningún archivo público.</p>
+      <div class="grid" style="max-width:660px">
+        <div><label>Project URL</label><input id="sb_url_in" value="${esc(_sb.url)}" placeholder="https://xxxx.supabase.co"></div>
+        <div><label>anon key</label><input id="sb_key_in" value="${esc(_sb.key)}" placeholder="eyJhbGci..."></div>
+      </div>
+      <div class="toolbar" style="margin-top:10px">
+        <button class="act" onclick="sbConnect()">Conectar</button>
+        <button class="act ghost" onclick="sbPush()">Subir base ↑ (local → nube)</button>
+        <button class="act ghost" onclick="sbPull()">Traer base ↓ (nube → local)</button>
+        <button class="act ghost" onclick="sbFillAltas()">Traer fechas de alta ↓ (created_at)</button>
+        <button class="act ghost" onclick="genSQL()">Descargar SQL (datos)</button>
+      </div>
+      <p class="small muted" style="margin-top:6px"><b>Fechas de alta:</b> el botón de arriba completa la antigüedad en el CRM de las propiedades que quedaron en <b>s/d</b>, usando el <code>created_at</code> de Supabase (cuándo entraron realmente a tu base). No toca las que ya tienen fecha.</p>
+      <p class="small muted" style="margin-top:6px">⚠ Modo simple: la anon key permite leer/escribir. Mantené este archivo privado. Para login por usuario, ver Paso 6 del runbook.</p>
+    </div>
+    <div class="panel">
+      <h3 style="margin-top:0">Respaldo y portabilidad</h3>
+      <p class="small muted">La base vive en este navegador (localStorage). Para tenerla <b>siempre a disposición</b> y portable, exportala a un archivo JSON: ese archivo es tu base histórica y el insumo para migrar a Supabase.</p>
+      <div class="toolbar">
+        <button class="act" onclick="exportJSON()">⬇ Exportar base (JSON)</button>
+        <button class="act" onclick="exportCSV()">⬇ Exportar propiedades (CSV)</button>
+        <label class="act ghost" style="cursor:pointer;display:inline-block">⬆ Importar base (JSON)<input type="file" accept="application/json" style="display:none" onchange="importJSON(event)"></label>
+        <button class="act ghost" onclick="if(confirm('¿Recargar datos semilla? Se pierde lo no exportado.')){DB=seed();save();show('dashboard');}">↻ Recargar semilla</button>
+        <button class="act ghost" style="border-color:#c99" onclick="if(confirm('¿Borrar toda la base?')){DB={zonas:[],propiedades:[],valorizacion:{},historico:[]};save();show('dashboard');}">🗑 Borrar base</button>
+      </div>
+    </div>
+    <div class="panel">
+      <h3 style="margin-top:0">Esquema para migración a Supabase (PostgreSQL)</h3>
+      <p class="small muted"><b>Para crear las tablas usá el archivo <code>supabase-schema.sql</code></b> (Paso 2 del runbook). El bloque de abajo es solo un resumen ilustrativo <b>incompleto</b> — no lo copies.</p>
+      <pre>create table zonas (
+  id text primary key, nombre text, departamento text, localidad text,
+  tipologia text, usd_m2_ref numeric, lat numeric, lon numeric, perfil text, notas text,
+  created_at timestamptz default now());
+
+create table propiedades (
+  id text primary key, zona text references zonas(id), tipologia text, direccion text,
+  m2 numeric, precio_pub numeric, descuento numeric, precio_real numeric, usd_m2 numeric,
+  fecha_aviso date, fecha_alta date, estado text, portal text, url text, created_at timestamptz default now());
+-- si la tabla ya existe, para guardar la fecha de alta en el CRM:
+--   alter table propiedades add column if not exists fecha_alta date;
+-- (sin esa columna el CRM igual calcula la antigüedad con created_at)
+
+create table valorizacion (
+  zona text references zonas(id), factor text, score int,
+  primary key (zona, factor));
+
+create table historico (
+  id bigserial primary key, zona text references zonas(id),
+  tipologia text, anio int, usd_m2 numeric, fuente text);</pre>
+    </div>`;
+}
+function dl(name,content,type){ const b=new Blob([content],{type}); const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download=name; a.click(); }
+function exportJSON(){ dl('crespo-crm-'+new Date().toISOString().slice(0,10)+'.json', JSON.stringify(DB,null,2),'application/json'); }
+function exportCSV(){ const h=['id','zona','tipologia','direccion','m2','precio_pub','descuento','precio_real','usd_m2','fecha_aviso','fecha_alta','dias_en_crm','estado','comentarios','gestion','proxima_accion','fecha_seguimiento','contacto_nombre','contacto_inmobiliaria','contacto_telefono','contacto_email','acciones','portal','url'];
+  const rows=DB.propiedades.map(p=>{ const c=p.contacto||{}; const row=Object.assign({},p,{dias_en_crm:(diasCRM(p)===null?'':diasCRM(p)),contacto_nombre:c.nombre||'',contacto_inmobiliaria:c.inmobiliaria||'',contacto_telefono:c.telefono||'',contacto_email:c.email||'',acciones:(p.acciones||[]).map(a=>a.fecha+': '+a.texto).join(' | ')});
+    return h.map(k=>`"${(row[k]!==undefined&&row[k]!==''?row[k]:'').toString().replace(/"/g,'""')}"`).join(','); });
+  dl('crespo-propiedades.csv',[h.join(','),...rows].join('\n'),'text/csv'); }
+function importJSON(e){ const f=e.target.files[0]; if(!f)return; const r=new FileReader(); r.onload=()=>{ try{ const d=JSON.parse(r.result); if(!d.zonas||!d.propiedades) throw new Error('formato'); DB=d; save(); alert('Base importada.'); show('dashboard'); }catch(err){ alert('Archivo inválido: '+err.message); } }; r.readAsText(f); }
+
+/* -------------------- NUBE (Supabase) -------------------- */
+let sb=null;
+function sbCfg(){ return {url:localStorage.getItem('sb_url')||'', key:localStorage.getItem('sb_key')||''}; }
+function ensureSb(){ const c=sbCfg(); if(!c.url||!c.key){ alert('Primero conectá: pegá Project URL + anon key y tocá "Conectar".'); return false; } if(!window.supabase){ alert('No cargó la librería de Supabase (¿sin internet?).'); return false; } if(!sb) sb=window.supabase.createClient(c.url,c.key); return true; }
+function sbConnect(){ const url=(val('sb_url_in')||'').trim(), key=(val('sb_key_in')||'').trim(); if(!url||!key){ alert('Completá URL y anon key.'); return; } localStorage.setItem('sb_url',url); localStorage.setItem('sb_key',key); sb=null; if(ensureSb()){ alert('Cliente Supabase creado. Probá "Traer base ↓" o "Subir base ↑".'); renderBase(); } }
+function numN(v){ return (v===''||v===undefined||v===null||isNaN(+v))?null:+v; }
+function dtN(v){ return v?v:null; }
+function toRow(p){ return {id:p.id,zona:p.zona,tipologia:p.tipologia,direccion:p.direccion,m2:numN(p.m2),precio_pub:numN(p.precio_pub),descuento:numN(p.descuento),precio_real:numN(p.precio_real),usd_m2:numN(p.usd_m2),fecha_aviso:dtN(p.fecha_aviso),fecha_alta:dtN(p.fecha_alta),estado:p.estado||'',comentarios:p.comentarios||'',gestion:p.gestion||'Sin clasificar',proxima_accion:p.proxima_accion||'',fecha_seguimiento:dtN(p.fecha_seguimiento),contacto:p.contacto||{},acciones:p.acciones||[],portal:p.portal||'',url:p.url||''}; }
+/* alta en CRM: si la tabla no tiene fecha_alta, se usa created_at (fecha real de inserción en Supabase) */
+function fromRow(r){ return {id:r.id,zona:r.zona,tipologia:r.tipologia,direccion:r.direccion,m2:r.m2==null?'':r.m2,precio_pub:r.precio_pub==null?'':r.precio_pub,descuento:r.descuento==null?'':r.descuento,precio_real:r.precio_real==null?'':r.precio_real,usd_m2:r.usd_m2==null?'':r.usd_m2,fecha_aviso:r.fecha_aviso||'',fecha_alta:r.fecha_alta||(r.created_at?(''+r.created_at).slice(0,10):''),estado:r.estado||'',comentarios:r.comentarios||'',gestion:r.gestion||'Sin clasificar',proxima_accion:r.proxima_accion||'',fecha_seguimiento:r.fecha_seguimiento||'',contacto:r.contacto||{nombre:'',telefono:'',email:'',inmobiliaria:''},acciones:r.acciones||[],portal:r.portal||'',url:r.url||''}; }
+async function sbPush(){ if(!ensureSb()) return; try{
+    const zonas=DB.zonas.map(z=>Object.assign({},z,{valorizacion:DB.valorizacion[z.id]||{}}));
+    let r=await sb.from('zonas').upsert(zonas,{onConflict:'id'}); if(r.error) throw r.error;
+    const rows=DB.propiedades.map(toRow);
+    r=await sb.from('propiedades').upsert(rows,{onConflict:'id'});
+    /* si la tabla todavía no tiene la columna fecha_alta, se reintenta sin ella (created_at cubre la antigüedad) */
+    if(r.error && /fecha_alta/.test(r.error.message||'')){ r=await sb.from('propiedades').upsert(rows.map(x=>{ const o=Object.assign({},x); delete o.fecha_alta; return o; }),{onConflict:'id'}); }
+    if(r.error) throw r.error;
+    await sb.from('historico').delete().gte('id',0);
+    if(DB.historico.length){ r=await sb.from('historico').insert(DB.historico.map(h=>({zona:h.zona,tipologia:h.tipologia,anio:h.anio,usd_m2:h.usd_m2,fuente:h.fuente}))); if(r.error) throw r.error; }
+    alert('Base subida a Supabase:\n• '+DB.zonas.length+' zonas\n• '+DB.propiedades.length+' propiedades\n• '+DB.historico.length+' puntos históricos');
+  }catch(e){ alert('Error al subir: '+(e.message||e)+'\n(copiame este mensaje y lo ajustamos)'); } }
+/* completa fecha_alta (antigüedad EN EL CRM) de las propiedades en s/d con el created_at real de Supabase */
+async function sbFillAltas(){ if(!ensureSb()) return; try{
+    const r=await sb.from('propiedades').select('id,url,fecha_alta,created_at'); if(r.error) throw r.error;
+    const byId={}, byUrl={};
+    (r.data||[]).forEach(x=>{ const f=x.fecha_alta||(x.created_at?(''+x.created_at).slice(0,10):''); if(!f) return; byId[x.id]=f; if(x.url) byUrl[x.url]=f; });
+    let n=0, faltan=0;
+    DB.propiedades.forEach(p=>{ if(p.fecha_alta) return; const f=byId[p.id]||(p.url?byUrl[p.url]:''); if(f){ p.fecha_alta=f; n++; } else faltan++; });
+    if(n) save();
+    alert('Fechas de alta completadas: '+n+' propiedad(es).'+(faltan?'\n'+faltan+' siguen en s/d (no están en Supabase): cargalas a mano en la ficha o subí la base primero.':''));
+    renderProps();
+  }catch(e){ alert('Error al traer fechas de alta: '+(e.message||e)); } }
+async function sbPull(){ if(!ensureSb()) return; if(!confirm('Traer la base de Supabase reemplaza la base local. ¿Continuar?')) return; try{
+    const z=await sb.from('zonas').select('*'); if(z.error) throw z.error;
+    const p=await sb.from('propiedades').select('*'); if(p.error) throw p.error;
+    const h=await sb.from('historico').select('*'); if(h.error) throw h.error;
+    DB.zonas=(z.data||[]).map(function(zz){ var o=Object.assign({},zz); delete o.valorizacion; delete o.created_at; return o; });
+    DB.valorizacion={}; (z.data||[]).forEach(function(zz){ DB.valorizacion[zz.id]=zz.valorizacion||{}; });
+    DB.propiedades=(p.data||[]).map(fromRow);
+    DB.historico=(h.data||[]).map(function(x){ return {zona:x.zona,tipologia:x.tipologia,anio:x.anio,usd_m2:x.usd_m2,fuente:x.fuente}; });
+    save(); alert('Base traída de Supabase: '+DB.zonas.length+' zonas, '+DB.propiedades.length+' propiedades.'); show('dashboard');
+  }catch(e){ alert('Error al traer: '+(e.message||e)+'\n(copiame este mensaje y lo ajustamos)'); } }
+function q(v){ return (v===null||v===undefined)?'null':"'"+(''+v).replace(/'/g,"''")+"'"; }
+function nz(v){ return (v===''||v===null||v===undefined||isNaN(+v))?'null':(+v); }
+function qd(v){ return v?("'"+v+"'"):'null'; }
+function genSQL(){
+  let s='-- Datos Crespo Real State para Supabase (correr después de supabase-schema.sql)\nbegin;\n';
+  DB.zonas.forEach(function(z){ s+='insert into zonas(id,nombre,departamento,localidad,tipologia,usd_m2_ref,lat,lon,perfil,notas,valorizacion) values ('+q(z.id)+','+q(z.nombre)+','+q(z.departamento)+','+q(z.localidad)+','+q(z.tipologia)+','+nz(z.usd_m2_ref)+','+nz(z.lat)+','+nz(z.lon)+','+q(z.perfil)+','+q(z.notas)+','+q(JSON.stringify(DB.valorizacion[z.id]||{}))+'::jsonb) on conflict (id) do update set valorizacion=excluded.valorizacion, usd_m2_ref=excluded.usd_m2_ref;\n'; });
+  DB.propiedades.forEach(function(p){ var r=toRow(p); s+='insert into propiedades(id,zona,tipologia,direccion,m2,precio_pub,descuento,precio_real,usd_m2,fecha_aviso,estado,comentarios,gestion,proxima_accion,fecha_seguimiento,contacto,acciones,portal,url) values ('+q(r.id)+','+q(r.zona)+','+q(r.tipologia)+','+q(r.direccion)+','+nz(r.m2)+','+nz(r.precio_pub)+','+nz(r.descuento)+','+nz(r.precio_real)+','+nz(r.usd_m2)+','+qd(r.fecha_aviso)+','+q(r.estado)+','+q(r.comentarios)+','+q(r.gestion)+','+q(r.proxima_accion)+','+qd(r.fecha_seguimiento)+','+q(JSON.stringify(r.contacto))+'::jsonb,'+q(JSON.stringify(r.acciones))+'::jsonb,'+q(r.portal)+','+q(r.url)+') on conflict (url) do nothing;\n'; });
+  DB.historico.forEach(function(h){ s+='insert into historico(zona,tipologia,anio,usd_m2,fuente) values ('+q(h.zona)+','+q(h.tipologia)+','+(h.anio||'null')+','+nz(h.usd_m2)+','+q(h.fuente)+');\n'; });
+  s+='commit;\n';
+  dl('crespo-datos-supabase.sql',s,'text/sql');
+}
+
+/* -------------------- DIALOG helper -------------------- */
+const dlg=document.getElementById('dlg'); let dlgCb=null;
+function openDlg(title,bodyHTML,cb){ document.getElementById('dlg-h').textContent=title; document.getElementById('dlg-b').innerHTML=bodyHTML; dlgCb=cb; dlg.showModal(); }
+function val(id){ const el=document.getElementById(id); return el? el.value : ''; }
+dlg.addEventListener('close',()=>{ if(dlg.returnValue==='ok'&&dlgCb) dlgCb(); dlgCb=null; });
+
+/* serie histórica de Maldonado: se carga una vez si la base no la tiene (botón en Histórico para recargarla) */
+if(!DB.historico.some(h=>h.zona==='zMaldonado')) loadHistMaldonado(false);
+show('dashboard');
+</script>
+</body>
+</html>
