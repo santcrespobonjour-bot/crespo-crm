@@ -7,68 +7,86 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
   integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
 <style>
-  :root{ --azul-oscuro:#1F3864; --azul-medio:#2E5496; --azul-claro:#8EAADB; --azul-muyclaro:#D9E1F2; --azul-acero:#0F6FC6; --tinta:#1a2230; --bg:#f4f6fb; }
+  :root{
+    --azul-oscuro:#1F3864; --azul-medio:#2E5496; --azul-claro:#8EAADB; --azul-muyclaro:#D9E1F2; --azul-acero:#0F6FC6;
+    --bg:#f4f6fb; --surface:#ffffff; --surface-2:#eef2f9; --hover:#D9E1F2;
+    --border:#e3e9f4; --border-soft:#e8edf6; --input-border:#c9d4e8;
+    --text:#1a2230; --text-muted:#5b6472; --muted:#7a8494;
+    --h1:#1F3864; --h2:#2E5496; --link:#0F6FC6;
+    --header-bg:#1F3864; --nav-inactive:#cdd8ef; --nav-active-text:#1F3864;
+    --tinta:#1a2230; --chart-bg:#ffffff; color-scheme:light;
+  }
+  :root[data-theme="dark"]{
+    --bg:#0e1520; --surface:#161f2e; --surface-2:#1e2a3d; --hover:#26344b;
+    --border:#2a3852; --border-soft:#243147; --input-border:#3a4a6a;
+    --text:#dbe4f1; --text-muted:#9aa7ba; --muted:#8593a6;
+    --h1:#9cb8e6; --h2:#b3c7ea; --link:#5aa6ef;
+    --header-bg:#0c1526; --nav-inactive:#9fb0cf; --nav-active-text:#cfe0ff;
+    --tinta:#dbe4f1; --chart-bg:#f2f6fc; color-scheme:dark;
+  }
   *{ box-sizing:border-box; }
-  body{ margin:0; font-family:"Segoe UI",Arial,sans-serif; color:var(--tinta); background:var(--bg); font-size:13.5px; }
-  header{ background:var(--azul-oscuro); color:#fff; padding:10px 18px; display:flex; align-items:center; gap:18px; position:sticky; top:0; z-index:500; }
+  body{ margin:0; font-family:"Segoe UI",Arial,sans-serif; color:var(--text); background:var(--bg); font-size:13.5px; }
+  header{ background:var(--header-bg); color:#fff; padding:10px 18px; display:flex; align-items:center; gap:18px; position:sticky; top:0; z-index:500; }
   header .brand{ font-weight:800; letter-spacing:2px; text-transform:uppercase; font-size:15px; }
   header .brand small{ display:block; font-size:9px; letter-spacing:1px; color:var(--azul-claro); font-weight:400; }
   nav{ display:flex; gap:4px; margin-left:10px; flex-wrap:wrap; }
-  nav button{ background:transparent; color:#cdd8ef; border:0; padding:8px 13px; border-radius:6px 6px 0 0; cursor:pointer; font-size:13px; font-weight:600; }
-  nav button.active{ background:var(--bg); color:var(--azul-oscuro); }
+  nav button{ background:transparent; color:var(--nav-inactive); border:0; padding:8px 13px; border-radius:6px 6px 0 0; cursor:pointer; font-size:13px; font-weight:600; }
+  nav button.active{ background:var(--bg); color:var(--nav-active-text); }
   main{ padding:18px; max-width:1200px; margin:0 auto; }
   .view{ display:none; } .view.active{ display:block; }
-  h2{ color:var(--azul-oscuro); font-size:18px; margin:4px 0 12px; }
-  h3{ color:var(--azul-medio); font-size:14px; margin:16px 0 6px; }
+  h2{ color:var(--h1); font-size:18px; margin:4px 0 12px; }
+  h3{ color:var(--h2); font-size:14px; margin:16px 0 6px; }
   .cards{ display:flex; gap:12px; flex-wrap:wrap; margin-bottom:16px; }
-  .card{ background:#fff; border:1px solid #e3e9f4; border-left:4px solid var(--azul-acero); border-radius:8px; padding:12px 16px; flex:1 1 150px; box-shadow:0 1px 3px rgba(0,0,0,.04); }
-  .card .v{ font-size:26px; font-weight:800; color:var(--azul-oscuro); } .card .l{ font-size:11px; color:#5b6472; text-transform:uppercase; letter-spacing:.4px; }
-  .panel{ background:#fff; border:1px solid #e3e9f4; border-radius:8px; padding:16px; margin-bottom:16px; box-shadow:0 1px 3px rgba(0,0,0,.04); }
+  .card{ background:var(--surface); border:1px solid var(--border); border-left:4px solid var(--azul-acero); border-radius:8px; padding:12px 16px; flex:1 1 150px; box-shadow:0 1px 3px rgba(0,0,0,.04); }
+  .card .v{ font-size:26px; font-weight:800; color:var(--h1); } .card .l{ font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:.4px; }
+  .panel{ background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:16px; margin-bottom:16px; box-shadow:0 1px 3px rgba(0,0,0,.04); }
   table{ border-collapse:collapse; width:100%; font-size:12px; }
-  th,td{ border-bottom:1px solid #e8edf6; padding:7px 8px; text-align:left; vertical-align:middle; }
+  th,td{ border-bottom:1px solid var(--border-soft); padding:7px 8px; text-align:left; vertical-align:middle; }
   th{ background:var(--azul-oscuro); color:#fff; font-weight:600; cursor:pointer; }
-  tbody tr:hover{ background:var(--azul-muyclaro); }
+  tbody tr:hover{ background:var(--hover); }
   td.num,th.num{ text-align:right; white-space:nowrap; }
-  a{ color:var(--azul-acero); text-decoration:none; } a:hover{ text-decoration:underline; }
+  a{ color:var(--link); text-decoration:none; } a:hover{ text-decoration:underline; }
   button.act{ background:var(--azul-acero); color:#fff; border:0; padding:8px 14px; border-radius:6px; cursor:pointer; font-weight:600; font-size:12.5px; }
-  button.ghost{ background:#fff; color:var(--azul-oscuro); border:1px solid var(--azul-claro); }
+  button.ghost{ background:var(--surface); color:var(--h1); border:1px solid var(--azul-claro); }
   button.mini{ padding:3px 8px; font-size:11px; }
-  input,select,textarea{ font-family:inherit; font-size:12.5px; padding:6px 8px; border:1px solid #c9d4e8; border-radius:5px; width:100%; }
-  label{ font-size:11px; color:#5b6472; font-weight:600; display:block; margin:6px 0 2px; }
+  input,select,textarea{ font-family:inherit; font-size:12.5px; padding:6px 8px; border:1px solid var(--input-border); border-radius:5px; width:100%; background:var(--surface); color:var(--text); }
+  label{ font-size:11px; color:var(--text-muted); font-weight:600; display:block; margin:6px 0 2px; }
   .grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; }
   .toolbar{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:12px; }
   .pill{ display:inline-block; padding:2px 9px; border-radius:11px; font-size:11px; font-weight:700; color:#fff; }
-  .iv-bar{ height:10px; border-radius:5px; background:#e3e9f4; overflow:hidden; }
+  .iv-bar{ height:10px; border-radius:5px; background:var(--surface-2); overflow:hidden; }
   .iv-bar > span{ display:block; height:100%; }
   #map{ height:480px; border-radius:8px; }
-  dialog{ border:0; border-radius:10px; padding:0; box-shadow:0 8px 40px rgba(0,0,0,.3); width:min(560px,94vw); }
+  dialog{ border:0; border-radius:10px; padding:0; box-shadow:0 8px 40px rgba(0,0,0,.5); width:min(560px,94vw); background:var(--surface); color:var(--text); }
   dialog .dlg-h{ background:var(--azul-oscuro); color:#fff; padding:12px 16px; font-weight:700; border-radius:10px 10px 0 0; }
-  dialog .dlg-b{ padding:16px; } dialog .dlg-f{ padding:12px 16px; display:flex; gap:8px; justify-content:flex-end; border-top:1px solid #eee; }
+  dialog .dlg-b{ padding:16px; } dialog .dlg-f{ padding:12px 16px; display:flex; gap:8px; justify-content:flex-end; border-top:1px solid var(--border-soft); }
   #ficha{ width:min(640px,96vw); }
-  dialog h4{ color:var(--azul-oscuro); margin:14px 0 5px; font-size:13px; border-bottom:1px solid #e8edf6; padding-bottom:3px; }
+  dialog h4{ color:var(--h1); margin:14px 0 5px; font-size:13px; border-bottom:1px solid var(--border-soft); padding-bottom:3px; }
   dialog h4:first-child{ margin-top:0; }
-  .muted{ color:#7a8494; } .small{ font-size:11px; }
-  .factor-row{ display:grid; grid-template-columns:1fr 46px 92px 60px; gap:8px; align-items:center; padding:5px 0; border-bottom:1px solid #eef2f9; }
+  .muted{ color:var(--muted); } .small{ font-size:11px; }
+  .factor-row{ display:grid; grid-template-columns:1fr 46px 92px 60px; gap:8px; align-items:center; padding:5px 0; border-bottom:1px solid var(--border-soft); }
   .factor-row input[type=range]{ padding:0; }
   /* multiselect (checkboxes) */
   .ms{ position:relative; display:inline-block; }
-  .ms-btn{ background:#fff; border:1px solid #c9d4e8; border-radius:5px; padding:6px 26px 6px 8px; font-size:12.5px; font-family:inherit; color:var(--tinta); cursor:pointer; width:100%; text-align:left; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .ms-btn:after{ content:"▾"; position:absolute; right:8px; top:6px; color:var(--azul-medio); }
-  .ms-btn.on{ border-color:var(--azul-acero); color:var(--azul-oscuro); font-weight:700; }
-  .ms-menu{ position:absolute; z-index:600; top:calc(100% + 3px); left:0; min-width:100%; max-width:320px; max-height:260px; overflow:auto; background:#fff; border:1px solid #c9d4e8; border-radius:6px; box-shadow:0 6px 20px rgba(0,0,0,.14); padding:4px; }
-  .ms-menu label{ display:flex; align-items:center; gap:7px; margin:0; padding:5px 7px; border-radius:4px; font-size:12px; color:var(--tinta); font-weight:500; cursor:pointer; white-space:nowrap; }
-  .ms-menu label:hover{ background:var(--azul-muyclaro); }
-  .ms-menu label.all{ font-weight:700; color:var(--azul-oscuro); border-bottom:1px solid #e8edf6; border-radius:4px 4px 0 0; }
+  .ms-btn{ background:var(--surface); border:1px solid var(--input-border); border-radius:5px; padding:6px 26px 6px 8px; font-size:12.5px; font-family:inherit; color:var(--text); cursor:pointer; width:100%; text-align:left; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .ms-btn:after{ content:"▾"; position:absolute; right:8px; top:6px; color:var(--h2); }
+  .ms-btn.on{ border-color:var(--azul-acero); color:var(--h1); font-weight:700; }
+  .ms-menu{ position:absolute; z-index:600; top:calc(100% + 3px); left:0; min-width:100%; max-width:320px; max-height:260px; overflow:auto; background:var(--surface); border:1px solid var(--input-border); border-radius:6px; box-shadow:0 6px 20px rgba(0,0,0,.28); padding:4px; }
+  .ms-menu label{ display:flex; align-items:center; gap:7px; margin:0; padding:5px 7px; border-radius:4px; font-size:12px; color:var(--text); font-weight:500; cursor:pointer; white-space:nowrap; }
+  .ms-menu label:hover{ background:var(--hover); }
+  .ms-menu label.all{ font-weight:700; color:var(--h1); border-bottom:1px solid var(--border-soft); border-radius:4px 4px 0 0; }
   .ms-menu input[type=checkbox]{ width:auto; padding:0; margin:0; accent-color:var(--azul-acero); }
-  code{ background:#eef2f9; padding:1px 5px; border-radius:4px; font-size:11px; }
+  code{ background:var(--surface-2); color:var(--text); padding:1px 5px; border-radius:4px; font-size:11px; }
   pre{ background:#0f1b30; color:#cfe0ff; padding:12px; border-radius:8px; overflow:auto; font-size:11px; line-height:1.5; }
+  .theme-btn{ margin-left:auto; background:transparent; border:1px solid rgba(255,255,255,.35); color:#fff; border-radius:6px; padding:5px 9px; cursor:pointer; font-size:14px; line-height:1; }
 </style>
 </head>
 <body>
 <header>
   <div class="brand">Crespo Real State<small>CRM · Estudio del Mercado</small></div>
   <nav id="nav"></nav>
-  <div id="whoami" style="margin-left:auto"></div>
+  <button id="themeToggle" class="theme-btn" onclick="toggleTheme()" title="Modo claro / oscuro">🌙</button>
+  <div id="whoami"></div>
 </header>
 <main>
   <section class="view" id="v-dashboard"></section>
@@ -133,6 +151,10 @@ const GESTION=[
   {v:'Cerrada / Comprada', c:'#1F3864'},
 ];
 function gColor(v){ const g=GESTION.find(g=>g.v===v); return g? g.c : '#8892a0'; }
+
+/* -------------------- TEMA (claro / oscuro) -------------------- */
+function applyTheme(t){ t = t==='dark'?'dark':'light'; document.documentElement.setAttribute('data-theme', t); localStorage.setItem('crespo_theme', t); const b=document.getElementById('themeToggle'); if(b) b.textContent = t==='dark'?'☀️':'🌙'; if(mapObj) setTimeout(function(){ mapObj.invalidateSize(); },50); }
+function toggleTheme(){ applyTheme(document.documentElement.getAttribute('data-theme')==='dark'?'light':'dark'); }
 
 /* -------------------- ANALISTAS / SESIÓN (Supabase Auth) -------------------- */
 const ANALISTAS=['Mario','Martín','Santiago'];
@@ -300,7 +322,7 @@ function renderFicha(){
       <div><label>Aviso</label>${p.url?`<div style="padding-top:7px"><a href="${p.url}" target="_blank">Abrir aviso ↗</a></div>`:'<div class="small muted" style="padding-top:8px">—</div>'}</div>
     </div>
     <h4>Notas y acciones de los analistas (${hist.length})${live?' <span class="pill" style="background:#0F6FC6">en vivo</span>':' <span class="pill" style="background:#8892a0">local</span>'}</h4>
-    <div style="max-height:190px;overflow:auto;border:1px solid #e8edf6;border-radius:6px;padding:4px 6px;background:#fafcff">
+    <div style="max-height:190px;overflow:auto;border:1px solid var(--border-soft);border-radius:6px;padding:4px 6px;background:var(--surface-2)">
       ${cargando? '<p class="small muted" style="margin:6px 2px">Cargando notas…</p>' : (hist.length? hist.map(a=>`<div style="display:flex;gap:8px;align-items:center;padding:5px 0;border-bottom:1px solid #eef2f9"><span class="pill" style="background:#2E5496;white-space:nowrap">${a.fecha||'s/f'}</span>${a.autor?`<span class="pill" style="background:#1F3864;white-space:nowrap">${esc(a.autor)}</span>`:'<span class="pill" style="background:#8892a0;white-space:nowrap">s/firma</span>'}<span style="flex:1">${esc(a.texto)}</span><button class="act ghost mini" type="button" onclick="${a.id!==undefined?`delNota(${a.id})`:`delAccion('${a.fecha}','${encodeURIComponent(a.texto)}')`}">✕</button></div>`).join('') : '<p class="small muted" style="margin:6px 2px">Sin notas todavía. Registrá la primera abajo.</p>')}
     </div>
     <div class="toolbar" style="margin-top:8px">
@@ -402,7 +424,7 @@ function renderDashboard(){
     <div class="panel">
       <h3 style="margin-top:0">USD/m² por zona × tipología <span class="small muted">· clic en una fila para filtrar el panel</span></h3>
       <div style="overflow:auto"><table><thead><tr><th>Zona</th><th>Tipología</th><th class="num">n</th><th class="num">Mediana</th><th class="num">Promedio</th><th class="num">Mín</th><th class="num">Máx</th><th>Muestra</th></tr></thead><tbody>
-      ${segmentos.length? segmentos.map(g=>{ const act=(!fz.length||fz.includes(g.zona))&&(!ft.length||ft.includes(g.tip))&&filtrado; return `<tr style="cursor:pointer;${act?'background:#D9E1F2':''}" onclick="dashSeg('${g.zona}','${esc(g.tip||'').replace(/'/g,"\\'")}')">
+      ${segmentos.length? segmentos.map(g=>{ const act=(!fz.length||fz.includes(g.zona))&&(!ft.length||ft.includes(g.tip))&&filtrado; return `<tr style="cursor:pointer;${act?'background:var(--hover)':''}" onclick="dashSeg('${g.zona}','${esc(g.tip||'').replace(/'/g,"\\'")}')">
         <td><b>${zoneName(g.zona)}</b></td><td>${g.tip||'s/d'}</td>
         <td class="num">${g.n}</td>
         <td class="num"><b>${g.nv?g.med.toLocaleString('es-UY'):'s/d'}</b></td>
@@ -621,6 +643,7 @@ function barChartH(items){
   const W=680,left=210,rowH=19,top=8,plotW=W-left-46;
   const max=(Math.max.apply(null,items.map(i=>i.v))||1)*1.08, med=median(items.map(i=>i.v)), H=top*2+items.length*rowH+4, mx=left+med/max*plotW;
   let s=`<svg viewBox="0 0 ${W} ${H}" width="100%" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI,Arial" font-size="10">`;
+  s+=`<rect x="0" y="0" width="${W}" height="${H}" rx="6" style="fill:var(--chart-bg,#fff)"/>`;
   s+=`<line x1="${mx.toFixed(1)}" y1="${top-2}" x2="${mx.toFixed(1)}" y2="${H-4}" stroke="#1F3864" stroke-width="1.2" stroke-dasharray="4 3"/><text x="${mx.toFixed(1)}" y="${top+6}" font-size="9" fill="#1F3864" text-anchor="middle">mediana ${Math.round(med)}</text>`;
   items.forEach((it,idx)=>{ const y=top+idx*rowH+6, w=Math.max(1,it.v/max*plotW), col=it.v<med?'#8EAADB':(it.v>med*1.15?'#1F3864':'#2E5496');
     s+=`<text x="${left-6}" y="${y+9}" text-anchor="end" fill="#1a2230">${esc(it.label).slice(0,32)}</text><rect x="${left}" y="${y+1}" width="${w.toFixed(1)}" height="11" rx="2" fill="${col}"/><text x="${(left+w+4).toFixed(1)}" y="${y+9}" fill="#5b6472">${it.v}</text>`; });
@@ -685,7 +708,7 @@ function lineChartProj(serie,años){
   const pt=(arr)=>arr.map(s=>x(s.anio).toFixed(1)+','+y(s.usd_m2).toFixed(1)).join(' ');
   const lastR=serie[serie.length-1];
   const band=[lastR].concat(opt).map(s=>x(s.anio).toFixed(1)+','+y(s.usd_m2).toFixed(1)).join(' ')+' '+[...cons].reverse().concat([lastR]).map(s=>x(s.anio).toFixed(1)+','+y(s.usd_m2).toFixed(1)).join(' ');
-  let sv=`<svg viewBox="0 0 ${W} ${H}" width="100%" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI,Arial" font-size="9"><rect width="${W}" height="${H}" fill="#fff"/>`;
+  let sv=`<svg viewBox="0 0 ${W} ${H}" width="100%" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI,Arial" font-size="9"><rect width="${W}" height="${H}" rx="6" style="fill:var(--chart-bg,#fff)"/>`;
   sv+=`<line x1="${x(lastR.anio).toFixed(1)}" y1="${top-4}" x2="${x(lastR.anio).toFixed(1)}" y2="${top+plotH}" stroke="#8EAADB" stroke-width="1" stroke-dasharray="3 3"/>`;
   sv+=`<polygon points="${band}" fill="#D9E1F2" opacity=".75"/>`;
   sv+=`<polyline points="${pt([lastR].concat(base))}" fill="none" stroke="#0F6FC6" stroke-width="2" stroke-dasharray="6 4"/>`;
@@ -705,7 +728,7 @@ function proyTabla(serie,años){
 function lineChartYears(series){
   const W=680,H=170,left=52,top=16,plotW=W-left-24,plotH=H-top-26,vals=series.map(s=>s.usd_m2),min=Math.min.apply(null,vals)*0.96,max=Math.max.apply(null,vals)*1.04,span=(max-min)||1;
   const x=i=>left+(series.length<2?plotW/2:i/(series.length-1)*plotW), y=v=>top+plotH-(v-min)/span*plotH;
-  let sv=`<svg viewBox="0 0 ${W} ${H}" width="100%" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI,Arial" font-size="9"><rect width="${W}" height="${H}" fill="#fff"/><polyline points="${series.map((s,i)=>x(i).toFixed(1)+','+y(s.usd_m2).toFixed(1)).join(' ')}" fill="none" stroke="#2E5496" stroke-width="2.4"/>`;
+  let sv=`<svg viewBox="0 0 ${W} ${H}" width="100%" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI,Arial" font-size="9"><rect width="${W}" height="${H}" rx="6" style="fill:var(--chart-bg,#fff)"/><polyline points="${series.map((s,i)=>x(i).toFixed(1)+','+y(s.usd_m2).toFixed(1)).join(' ')}" fill="none" stroke="#2E5496" stroke-width="2.4"/>`;
   series.forEach((s,i)=>{ sv+=`<circle cx="${x(i).toFixed(1)}" cy="${y(s.usd_m2).toFixed(1)}" r="3.2" fill="#0F6FC6"/><text x="${x(i).toFixed(1)}" y="${(y(s.usd_m2)-7).toFixed(1)}" text-anchor="middle" font-weight="700" fill="#1F3864">${s.usd_m2}</text><text x="${x(i).toFixed(1)}" y="${H-8}" text-anchor="middle" fill="#5b6472">${s.anio}</text>`; });
   return sv+'</svg>';
 }
@@ -746,7 +769,7 @@ function renderHistorico(){
     const cg=cagr(zserie), estim=zserie.filter(h=>/estim/i.test(h.fuente||'')).length;
     html+=`<div class="panel">
       <h3 style="margin-top:0">${zoneName(g.zona)} · ${g.tipo} <span class="pill" style="background:${n<10?'#8892a0':'#0F6FC6'};margin-left:6px">${n} prospecto${n===1?'':'s'}</span></h3>
-      ${n&&n<10?`<div class="box" style="border-left:4px solid #1F3864;background:#eef2f9;margin:6px 0"><b>⚠ Muestra de ${n} (&lt; 10):</b> la muestra <b>no es del todo representativa</b>; los valores son indicativos y se robustecen al actualizar la base.</div>`:''}
+      ${n&&n<10?`<div class="box" style="border-left:4px solid var(--azul-acero);background:var(--surface-2);border-radius:0 6px 6px 0;padding:8px 10px;margin:6px 0"><b>⚠ Muestra de ${n} (&lt; 10):</b> la muestra <b>no es del todo representativa</b>; los valores son indicativos y se robustecen al actualizar la base.</div>`:''}
       ${vals.length?`<div class="small muted" style="margin:2px 0 4px">USD/m²: mín <b>${mn}</b> · mediana <b>${med}</b> · promedio <b>${avg}</b> · máx <b>${mx}</b></div>${barChartH(items)}`:''}
       ${zserie.length>1?`
         <h4 style="color:var(--azul-medio);font-size:12px;margin:14px 0 2px;border:0">Serie ${zserie[0].anio}–${zserie[zserie.length-1].anio} y proyección ${zserie[zserie.length-1].anio+1}–${zserie[zserie.length-1].anio+años} (USD/m²)</h4>
@@ -1070,6 +1093,7 @@ dlg.addEventListener('close',()=>{ if(dlg.returnValue==='ok'&&dlgCb) dlgCb(); dl
 
 /* serie histórica de Maldonado: se carga una vez si la base no la tiene (botón en Histórico para recargarla) */
 if(!DB.historico.some(h=>h.zona==='zMaldonado')) loadHistMaldonado(false);
+applyTheme(localStorage.getItem('crespo_theme')||'dark');
 renderWhoami();
 sbInit();
 show('dashboard');
