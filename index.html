@@ -791,10 +791,11 @@ function renderBase(){
 create table propiedades (
   id text primary key, zona text references zonas(id), tipologia text, direccion text,
   m2 numeric, precio_pub numeric, descuento numeric, precio_real numeric, usd_m2 numeric,
-  fecha_aviso date, fecha_alta date, estado text, portal text, url text, created_at timestamptz default now());
--- si la tabla ya existe, para guardar la fecha de alta en el CRM:
---   alter table propiedades add column if not exists fecha_alta date;
--- (sin esa columna el CRM igual calcula la antigüedad con created_at)
+  fecha_aviso date, fecha_alta date, lat numeric, lon numeric, estado text, portal text, url text, created_at timestamptz default now());
+-- si la tabla ya existe, agregá las columnas nuevas (alta en CRM + coordenadas del mapa):
+--   alter table propiedades add column if not exists fecha_alta date,
+--     add column if not exists lat numeric, add column if not exists lon numeric;
+-- (sin esas columnas el CRM sigue funcionando: la antigüedad usa created_at y el mapa ubica por zona)
 
 create table valorizacion (
   zona text references zonas(id), factor text, score int,
@@ -820,17 +821,21 @@ function ensureSb(){ const c=sbCfg(); if(!c.url||!c.key){ alert('Primero conect�
 function sbConnect(){ const url=(val('sb_url_in')||'').trim(), key=(val('sb_key_in')||'').trim(); if(!url||!key){ alert('Completá URL y anon key.'); return; } localStorage.setItem('sb_url',url); localStorage.setItem('sb_key',key); sb=null; if(ensureSb()){ alert('Cliente Supabase creado. Probá "Traer base ↓" o "Subir base ↑".'); renderBase(); } }
 function numN(v){ return (v===''||v===undefined||v===null||isNaN(+v))?null:+v; }
 function dtN(v){ return v?v:null; }
-function toRow(p){ return {id:p.id,zona:p.zona,tipologia:p.tipologia,direccion:p.direccion,m2:numN(p.m2),precio_pub:numN(p.precio_pub),descuento:numN(p.descuento),precio_real:numN(p.precio_real),usd_m2:numN(p.usd_m2),fecha_aviso:dtN(p.fecha_aviso),fecha_alta:dtN(p.fecha_alta),estado:p.estado||'',comentarios:p.comentarios||'',gestion:p.gestion||'Sin clasificar',proxima_accion:p.proxima_accion||'',fecha_seguimiento:dtN(p.fecha_seguimiento),contacto:p.contacto||{},acciones:p.acciones||[],portal:p.portal||'',url:p.url||''}; }
+function toRow(p){ return {id:p.id,zona:p.zona,tipologia:p.tipologia,direccion:p.direccion,m2:numN(p.m2),precio_pub:numN(p.precio_pub),descuento:numN(p.descuento),precio_real:numN(p.precio_real),usd_m2:numN(p.usd_m2),fecha_aviso:dtN(p.fecha_aviso),fecha_alta:dtN(p.fecha_alta),lat:numN(p.lat),lon:numN(p.lon),estado:p.estado||'',comentarios:p.comentarios||'',gestion:p.gestion||'Sin clasificar',proxima_accion:p.proxima_accion||'',fecha_seguimiento:dtN(p.fecha_seguimiento),contacto:p.contacto||{},acciones:p.acciones||[],portal:p.portal||'',url:p.url||''}; }
 /* alta en CRM: si la tabla no tiene fecha_alta, se usa created_at (fecha real de inserción en Supabase) */
-function fromRow(r){ return {id:r.id,zona:r.zona,tipologia:r.tipologia,direccion:r.direccion,m2:r.m2==null?'':r.m2,precio_pub:r.precio_pub==null?'':r.precio_pub,descuento:r.descuento==null?'':r.descuento,precio_real:r.precio_real==null?'':r.precio_real,usd_m2:r.usd_m2==null?'':r.usd_m2,fecha_aviso:r.fecha_aviso||'',fecha_alta:r.fecha_alta||(r.created_at?(''+r.created_at).slice(0,10):''),estado:r.estado||'',comentarios:r.comentarios||'',gestion:r.gestion||'Sin clasificar',proxima_accion:r.proxima_accion||'',fecha_seguimiento:r.fecha_seguimiento||'',contacto:r.contacto||{nombre:'',telefono:'',email:'',inmobiliaria:''},acciones:r.acciones||[],portal:r.portal||'',url:r.url||''}; }
+function fromRow(r){ return {id:r.id,zona:r.zona,tipologia:r.tipologia,direccion:r.direccion,m2:r.m2==null?'':r.m2,precio_pub:r.precio_pub==null?'':r.precio_pub,descuento:r.descuento==null?'':r.descuento,precio_real:r.precio_real==null?'':r.precio_real,usd_m2:r.usd_m2==null?'':r.usd_m2,fecha_aviso:r.fecha_aviso||'',fecha_alta:r.fecha_alta||(r.created_at?(''+r.created_at).slice(0,10):''),lat:r.lat==null?'':r.lat,lon:r.lon==null?'':r.lon,estado:r.estado||'',comentarios:r.comentarios||'',gestion:r.gestion||'Sin clasificar',proxima_accion:r.proxima_accion||'',fecha_seguimiento:r.fecha_seguimiento||'',contacto:r.contacto||{nombre:'',telefono:'',email:'',inmobiliaria:''},acciones:r.acciones||[],portal:r.portal||'',url:r.url||''}; }
 async function sbPush(){ if(!ensureSb()) return; try{
     const zonas=DB.zonas.map(z=>Object.assign({},z,{valorizacion:DB.valorizacion[z.id]||{}}));
     let r=await sb.from('zonas').upsert(zonas,{onConflict:'id'}); if(r.error) throw r.error;
     const rows=DB.propiedades.map(toRow);
     r=await sb.from('propiedades').upsert(rows,{onConflict:'id'});
-    /* si la tabla todavía no tiene la columna fecha_alta, se reintenta sin ella (created_at cubre la antigüedad) */
-    if(r.error && /fecha_alta/.test(r.error.message||'')){ r=await sb.from('propiedades').upsert(rows.map(x=>{ const o=Object.assign({},x); delete o.fecha_alta; return o; }),{onConflict:'id'}); }
+    /* si la tabla aún no tiene alguna columna nueva (fecha_alta, lat, lon), se reintenta sin ella hasta 3 veces */
+    let intentos=0, faltantes=[];
+    while(r.error && intentos<3){ const col=(r.error.message||'').match(/'([a-z_]+)' column|column "?([a-z_]+)"?/i); const c=col&&(col[1]||col[2]);
+      if(!c || !['fecha_alta','lat','lon'].includes(c)) break;
+      faltantes.push(c); r=await sb.from('propiedades').upsert(rows.map(x=>{ const o=Object.assign({},x); faltantes.forEach(f=>delete o[f]); return o; }),{onConflict:'id'}); intentos++; }
     if(r.error) throw r.error;
+    if(faltantes.length) setTimeout(()=>alert('⚠ Se subió, pero tu tabla no tiene la(s) columna(s): '+faltantes.join(', ')+'.\nPara guardar esos datos, corré una vez en el SQL editor de Supabase:\nalter table propiedades add column if not exists lat numeric, add column if not exists lon numeric, add column if not exists fecha_alta date;'),100);
     await sb.from('historico').delete().gte('id',0);
     if(DB.historico.length){ r=await sb.from('historico').insert(DB.historico.map(h=>({zona:h.zona,tipologia:h.tipologia,anio:h.anio,usd_m2:h.usd_m2,fuente:h.fuente}))); if(r.error) throw r.error; }
     alert('Base subida a Supabase:\n• '+DB.zonas.length+' zonas\n• '+DB.propiedades.length+' propiedades\n• '+DB.historico.length+' puntos históricos');
