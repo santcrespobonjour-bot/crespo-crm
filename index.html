@@ -341,6 +341,7 @@ function renderDashboard(){
         ${msBox('dz','Todas las zonas',DB.zonas.map(z=>({v:z.id,l:z.nombre+' ('+z.departamento+')'})),fz,'dashPickZona','renderDashboard',230)}
         ${msBox('dt','Todas las tipologías',tips.map(t=>({v:t,l:t})),ft,'dashPickTip','renderDashboard',210)}
         ${filtrado?`<button class="act ghost mini" onclick="dashSeg('','')">✕ Limpiar</button>`:''}
+        <button class="act" onclick="generarInforme()">📄 Generar informe</button>
         <span class="small muted">${s.n} propiedad(es) · ${s.nv} con USD/m²</span>
       </div>
       <div class="small muted" style="margin-bottom:6px">Segmento: <b>${esc(titSel)}</b>${!filtrado?' — los valores de abajo son un agregado; elegí zona y tipología para que signifiquen algo.':''}${filtrado&&s.nv&&s.nv<10?' <span class="pill" style="background:#1F3864">muestra chica (n&lt;10): tomar como indicativo</span>':''}${mezcla?' <span class="pill" style="background:#8EAADB">agregado de varios segmentos: mirá la tabla de abajo</span>':''}</div>
@@ -737,6 +738,78 @@ function addHist(zona,tipologia){
     DB.historico.push({zona:val('h_zona'),tipologia:val('h_tip'),anio:+val('h_anio'),usd_m2:u,fuente:val('h_fuente')||'s/d'});
     save(); renderHistorico();
   });
+}
+
+/* -------------------- INFORME RÁPIDO (zona/tipología) -------------------- */
+function generarInforme(){
+  const fz=dashFilter.zonas, ft=dashFilter.tips;
+  if(!fz.length && !ft.length){ alert('Elegí al menos una zona o una tipología en el filtro del Panel para acotar el informe.'); return; }
+  const sel=DB.propiedades.filter(p=>(!fz.length||fz.includes(p.zona))&&(!ft.length||ft.includes(p.tipologia)));
+  if(!sel.length){ alert('No hay propiedades en ese segmento.'); return; }
+  const zonasSel = fz.length? fz.slice() : [...new Set(sel.map(p=>p.zona))];
+  const s=statsUSD(sel);
+  const nomZ = fz.length? fz.map(zoneName).join(' + ') : 'Todas las zonas';
+  const nomT = ft.length? ft.join(' + ') : 'Todas las tipologías';
+  const hoy=hoyStr();
+  const money=v=>v?('US$ '+(+v).toLocaleString('es-UY')):'s/d';
+  const años=proyCfg.años;
+  /* comparables ordenados por USD/m² */
+  const comps=[...sel].filter(p=>+p.usd_m2>0).sort((a,b)=>(+a.usd_m2)-(+b.usd_m2));
+  const barItems=comps.map(p=>({label:p.direccion+' ('+zoneName(p.zona)+')',v:Math.round(+p.usd_m2*10)/10}));
+  /* oportunidades = marcadas "Tomar acción" o, si no hay, las 3 de menor USD/m² */
+  let oport=sel.filter(p=>p.gestion==='Tomar acción');
+  if(!oport.length) oport=comps.slice(0,3);
+  /* bloque histórico+proyección por zona */
+  const bloquesHist=zonasSel.map(zid=>{ const zserie=DB.historico.filter(h=>h.zona===zid).sort((a,b)=>a.anio-b.anio); if(zserie.length<2) return '';
+    const cg=cagr(zserie), ultimo=zserie[zserie.length-1];
+    return `<h3>${zoneName(zid)} — evolución ${zserie[0].anio}–${ultimo.anio} y proyección a ${ultimo.anio+años}</h3>
+      ${lineChartProj(zserie,años)}
+      <p class="small">Variación acumulada ${zserie[0].anio}→${ultimo.anio}: <b>${Math.round((ultimo.usd_m2/zserie[0].usd_m2-1)*100)}%</b> · CAGR observado <b>${cg===null?'s/d':cg.toFixed(1)+'%'}</b> anual. Proyección base ${proyCfg.base}% (escenarios ${proyCfg.cons}%–${proyCfg.opt}%).</p>
+      ${proyTabla(zserie,años)}`;
+  }).filter(Boolean).join('');
+  /* factores de valorización por zona */
+  const bloquesIV=zonasSel.map(zid=>{ const iv=calcIV(DB.valorizacion[zid]); return `<tr><td><b>${zoneName(zid)}</b></td><td>${(DB.zonas.find(z=>z.id===zid)||{}).departamento||''}</td><td class="num">${(+(DB.zonas.find(z=>z.id===zid)||{}).usd_m2_ref||0).toLocaleString('es-UY')}</td><td class="num"><b style="color:${ivColor(iv)}">${iv} · ${ivLabel(iv)}</b></td><td class="small">${topDrivers(zid)||'s/d'}</td></tr>`; }).join('');
+  const chico = s.nv>0 && s.nv<10;
+  const css=`
+    *{box-sizing:border-box} body{font-family:"Segoe UI",Arial,sans-serif;color:#1a2230;margin:0;font-size:12px;line-height:1.5}
+    .wrap{max-width:780px;margin:0 auto;padding:26px}
+    h1{color:#1F3864;font-size:22px;margin:0 0 2px} h2{color:#1F3864;font-size:15px;border-bottom:2px solid #D9E1F2;padding-bottom:3px;margin:22px 0 8px}
+    h3{color:#2E5496;font-size:13px;margin:14px 0 4px} .sub{color:#5b6472;font-size:12px;margin:0 0 12px}
+    table{border-collapse:collapse;width:100%;font-size:11px;margin:4px 0} th,td{border-bottom:1px solid #e8edf6;padding:5px 7px;text-align:left} th{background:#1F3864;color:#fff} td.num,th.num{text-align:right;white-space:nowrap}
+    .kpis{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0} .kpi{flex:1 1 120px;border:1px solid #e3e9f4;border-left:4px solid #0F6FC6;border-radius:7px;padding:9px 12px} .kpi .v{font-size:20px;font-weight:800;color:#1F3864} .kpi .l{font-size:10px;color:#5b6472;text-transform:uppercase;letter-spacing:.3px}
+    .small{font-size:10.5px;color:#5b6472} .box{background:#eef2f9;border-left:4px solid #1F3864;padding:8px 10px;border-radius:0 6px 6px 0;margin:8px 0}
+    .foot{margin-top:26px;border-top:1px solid #e8edf6;padding-top:8px;color:#7a8494;font-size:10px}
+    .no-print{margin:0 0 14px} button{background:#0F6FC6;color:#fff;border:0;padding:9px 16px;border-radius:6px;font-weight:700;cursor:pointer;font-size:13px}
+    @media print{ .no-print{display:none} .wrap{max-width:none;padding:0} body{font-size:11px} h2{break-after:avoid} table{break-inside:auto} tr{break-inside:avoid} svg{max-width:100%} @page{margin:14mm} }`;
+  const html=`<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Informe ${esc(nomZ)} · ${esc(nomT)}</title><style>${css}</style></head><body><div class="wrap">
+    <div class="no-print"><button onclick="window.print()">🖨 Imprimir / Guardar PDF</button></div>
+    <h1>Informe de mercado — ${esc(nomZ)}</h1>
+    <p class="sub"><b>${esc(nomT)}</b> · ${sel.length} comparable(s) en base · emitido ${hoy} · Crespo Real State — Estudio del Mercado (metodología ACM)</p>
+    ${chico?`<div class="box"><b>⚠ Muestra de ${s.nv} (&lt;10):</b> valores indicativos; la mediana es más robusta que el promedio. Se refuerza al ampliar la base.</div>`:''}
+    <h2>Resumen de valores (USD/m²)</h2>
+    <div class="kpis">
+      <div class="kpi"><div class="v">${s.nv?s.med.toLocaleString('es-UY'):'s/d'}</div><div class="l">Mediana (referencia)</div></div>
+      <div class="kpi"><div class="v">${s.nv?s.avg.toLocaleString('es-UY'):'s/d'}</div><div class="l">Promedio</div></div>
+      <div class="kpi"><div class="v" style="font-size:15px">${s.nv?s.mn.toLocaleString('es-UY')+' – '+s.mx.toLocaleString('es-UY'):'s/d'}</div><div class="l">Rango mín – máx</div></div>
+      <div class="kpi"><div class="v">${sel.length}</div><div class="l">Comparables</div></div>
+    </div>
+    <p class="small">La <b>mediana manda</b>: es el valor central de la muestra y no se distorsiona con extremos. El promedio se incluye solo como contraste.</p>
+    ${barItems.length?`<h3>Dispersión de comparables</h3>${barChartH(barItems)}`:''}
+    <h2>Comparables</h2>
+    <table><thead><tr><th>Ubicación</th><th>Zona</th><th>Tipología</th><th class="num">m²</th><th class="num">Precio</th><th class="num">USD/m²</th><th>Fecha aviso</th><th>Gestión</th></tr></thead><tbody>
+    ${[...sel].sort((a,b)=>(+b.usd_m2||0)-(+a.usd_m2||0)).map(p=>`<tr><td>${esc(p.direccion||'')}</td><td>${esc(zoneName(p.zona))}</td><td>${esc(p.tipologia||'')}</td><td class="num">${p.m2||'s/d'}</td><td class="num">${p.precio_real?money(p.precio_real):money(p.precio_pub)}</td><td class="num"><b>${p.usd_m2||'s/d'}</b></td><td>${p.fecha_aviso||'s/d'}</td><td>${esc(p.gestion||'')}</td></tr>`).join('')}
+    </tbody></table>
+    ${bloquesHist?`<h2>Histórico y proyección</h2>${bloquesHist}`:''}
+    <h2>Factores de valorización (IV)</h2>
+    <table><thead><tr><th>Zona</th><th>Depto</th><th class="num">USD/m² ref.</th><th class="num">IV</th><th>Principales drivers</th></tr></thead><tbody>${bloquesIV}</tbody></table>
+    <h2>Oportunidades</h2>
+    ${oport.length?`<table><thead><tr><th>Ubicación</th><th>Zona</th><th class="num">Precio</th><th class="num">USD/m²</th><th>Nota</th></tr></thead><tbody>
+      ${oport.map(p=>{ const dif=s.med&&+p.usd_m2? Math.round((+p.usd_m2/s.med-1)*100):null; return `<tr><td>${esc(p.direccion||'')}</td><td>${esc(zoneName(p.zona))}</td><td class="num">${p.precio_real?money(p.precio_real):money(p.precio_pub)}</td><td class="num"><b>${p.usd_m2||'s/d'}</b></td><td class="small">${dif!==null?(dif<0?`<b>${dif}%</b> bajo la mediana del segmento`:`${dif>0?'+':''}${dif}% vs. mediana`):''}${p.comentarios?` · ${esc(p.comentarios)}`:''}</td></tr>`; }).join('')}
+      </tbody></table>`:'<p class="small">Sin oportunidades marcadas. Etiquetá unidades como "Tomar acción" en Propiedades para que aparezcan acá.</p>'}
+    <div class="foot">Informe generado desde el CRM Crespo Real State el ${hoy}. Análisis de comparables de mercado (ACM); no constituye tasación. Valores en USD. Descuentos aplicados solo con fecha de aviso visible. Fuente de la serie histórica: ver detalle por punto en la pestaña Histórico del CRM.</div>
+  </div></body></html>`;
+  const w=window.open('','_blank'); if(!w){ alert('El navegador bloqueó la ventana emergente. Permití pop-ups para generar el informe.'); return; }
+  w.document.open(); w.document.write(html); w.document.close();
 }
 
 /* -------------------- MAPA -------------------- */
