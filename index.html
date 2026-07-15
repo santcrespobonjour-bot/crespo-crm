@@ -114,7 +114,7 @@ function ivLabel(iv){ return iv>=75?'muy fuerte': iv>=60?'fuerte': iv>=40?'moder
 
 /* -------------------- DATOS SEMILLA (base histórica inicial) -------------------- */
 function seed(){ return { zonas:[], valorizacion:{}, historico:[], propiedades:[] };}
-/* Version publicada: base semilla vacia. Los datos se traen de Supabase (Base de datos -> Conectar -> Traer base). */
+/* Version publicada: base semilla vacia. Los datos se traen de Supabase (login -> Base de datos). */
 
 /* -------------------- PERSISTENCIA -------------------- */
 const KEY='crespo_crm_db';
@@ -134,17 +134,41 @@ const GESTION=[
 ];
 function gColor(v){ const g=GESTION.find(g=>g.v===v); return g? g.c : '#8892a0'; }
 
-/* -------------------- ANALISTAS (firma de notas; provisional hasta el login por Supabase Auth) -------------------- */
+/* -------------------- ANALISTAS / SESIÓN (Supabase Auth) -------------------- */
 const ANALISTAS=['Mario','Martín','Santiago'];
-function currentAnalyst(){ return localStorage.getItem('crespo_analista')||''; }
+let sbUser=null;
+function analystName(u){ if(!u) return ''; const m=u.user_metadata||{}; return m.name||m.display_name||(u.email? u.email.split('@')[0].replace(/^./,function(c){return c.toUpperCase();}) : 'Analista'); }
+function currentAnalyst(){ if(sbUser) return analystName(sbUser); return localStorage.getItem('crespo_analista')||''; }
 function setAnalyst(v){ if(v) localStorage.setItem('crespo_analista',v); else localStorage.removeItem('crespo_analista'); renderWhoami(); if(fichaId&&document.getElementById('ficha').open) renderFicha(); }
-function renderWhoami(){ const cur=currentAnalyst(); const box=document.getElementById('whoami'); if(!box) return;
+function renderWhoami(){ const box=document.getElementById('whoami'); if(!box) return;
+  const cfg=sbCfg(), configured=!!(cfg.url&&cfg.key);
+  if(sbUser){ box.innerHTML=`<span class="small">👤 <b style="color:#fff">${esc(analystName(sbUser))}</b></span> <button class="act ghost mini" onclick="logout()">Salir</button>`; return; }
+  if(configured){ box.innerHTML=`<span class="small" style="color:#ffd0d0">sin sesión</span> <button class="act mini" onclick="loginDialog()">Ingresar</button>`; return; }
+  const cur=localStorage.getItem('crespo_analista')||'';
   box.innerHTML=`<span class="small" style="color:#cdd8ef">Analista:</span>
     <select onchange="setAnalyst(this.value)" style="width:auto;display:inline-block;background:${cur?'#fff':'#ffe9e9'};font-weight:700;padding:4px 8px">
       <option value="" ${cur?'':'selected'}>— elegí quién sos —</option>
       ${ANALISTAS.map(a=>`<option ${cur===a?'selected':''}>${a}</option>`).join('')}
     </select>`;
 }
+function loginDialog(){ if(!sbClient()){ alert('Primero configurá la conexión en "Base de datos" (Project URL + publishable key).'); show('base'); return; }
+  openDlg('Ingresar al CRM', `<div class="grid">
+    <div style="grid-column:1/-1"><label>Email</label><input id="lg_mail" type="email" autocomplete="username" placeholder="tuusuario@crespo.uy"></div>
+    <div style="grid-column:1/-1"><label>Contraseña</label><input id="lg_pass" type="password" autocomplete="current-password"></div>
+  </div><p class="small muted">Usuario de analista creado en Supabase (Mario / Martín / Santiago).</p>`, doLogin); }
+async function doLogin(){ const c=sbClient(); const email=(val('lg_mail')||'').trim(), pass=val('lg_pass');
+  if(!email||!pass){ alert('Completá email y contraseña.'); return; }
+  try{ const r=await c.auth.signInWithPassword({email:email,password:pass}); if(r.error) throw r.error;
+    sbUser=r.data.user; renderWhoami(); alert('Sesión iniciada como '+analystName(sbUser)+'.'); if(fichaId&&document.getElementById('ficha').open){ loadNotas(fichaId); }
+  }catch(e){ alert('No se pudo ingresar: '+(e.message||e)); } }
+async function logout(){ const c=sbClient(); if(c){ try{ await c.auth.signOut(); }catch(e){} } sbUser=null; renderWhoami(); }
+async function logAccion(p,texto){ if(sbUser){ const c=sbClient(); try{ const r=await c.from('notas').insert({propiedad_id:p.id,autor:currentAnalyst(),texto:texto}); if(r.error) throw r.error; await loadNotas(p.id); }catch(e){ alert('No se pudo registrar la nota: '+(e.message||e)); } }
+  else { p.acciones.push({fecha:hoyStr(),texto:texto,autor:currentAnalyst()}); save(); if(fichaId===p.id&&document.getElementById('ficha').open) renderFicha(); } }
+async function loadNotas(id){ const c=sbClient(); if(!c||!sbUser) return; try{ const r=await c.from('notas').select('*').eq('propiedad_id',id).order('created_at',{ascending:false}); if(r.error) throw r.error;
+    const p=DB.propiedades.find(x=>x.id===id); if(!p) return; p._notas=r.data||[]; p._notasLoaded=true; if(fichaId===id&&document.getElementById('ficha').open) renderFicha();
+  }catch(e){ console.warn('loadNotas',e); } }
+async function delNota(id){ if(!confirm('¿Borrar esta nota?')) return; const c=sbClient(); try{ const r=await c.from('notas').delete().eq('id',id); if(r.error) throw r.error; await loadNotas(fichaId); }catch(e){ alert('No se pudo borrar: '+(e.message||e)); } }
+async function liveUpsert(p){ if(!sbUser) return; const c=sbClient(); try{ const r=await c.from('propiedades').upsert(toRow(p),{onConflict:'id'}); if(r.error) throw r.error; }catch(e){ console.warn('liveUpsert',e); } }
 
 /* -------------------- PLANTILLAS DE MENSAJES (WhatsApp / Mail) -------------------- */
 const MSG_DEFAULT=[
@@ -164,12 +188,12 @@ function sendWhatsApp(){ const p=DB.propiedades.find(x=>x.id===fichaId); if(!p) 
   const tel=val('c_tel')||c.telefono; if(!tel){ alert('Cargá primero el teléfono del contacto.'); return; }
   const t=msgTemplates()[+val('msg_tpl')||0]; const msg=fillTpl(t.texto,p); syncFichaInputs();
   window.open(waLink(tel,msg),'_blank');
-  p.acciones.push({fecha:hoyStr(),texto:'WhatsApp enviado ('+t.nombre+')',autor:currentAnalyst()}); save(); renderFicha(); }
+  logAccion(p,'WhatsApp enviado ('+t.nombre+')'); }
 function sendMail(){ const p=DB.propiedades.find(x=>x.id===fichaId); if(!p) return; const c=p.contacto||{};
   const mail=val('c_mail')||c.email; if(!mail){ alert('Cargá primero el email del contacto.'); return; }
   const t=msgTemplates()[+val('msg_tpl')||0]; const msg=fillTpl(t.texto,p); syncFichaInputs();
   window.open(mailLink(mail,p,msg),'_blank');
-  p.acciones.push({fecha:hoyStr(),texto:'Mail enviado ('+t.nombre+')',autor:currentAnalyst()}); save(); renderFicha(); }
+  logAccion(p,'Mail enviado ('+t.nombre+')'); }
 function editTemplates(){ const tpl=msgTemplates();
   openDlg('Plantillas de mensajes', `<p class="small muted">Variables: <code>{dir}</code> <code>{zona}</code> <code>{tipologia}</code> <code>{precio}</code> <code>{m2}</code> <code>{usdm2}</code> <code>{analista}</code></p>
     <div id="tpl_list">${tpl.map((t,i)=>`<div class="grid" style="border-bottom:1px solid #eef2f9;padding-bottom:6px;margin-bottom:6px">
@@ -197,7 +221,7 @@ function diasCRM(p){ if(!p.fecha_alta) return null; const d=Math.floor((Date.now
 function antigBucket(p){ const d=diasCRM(p); if(d===null) return 'sd'; return d<=7?'nuevas' : d<=30?'30' : d<=90?'90' : 'viejas'; }
 function antigColor(p){ const b=antigBucket(p), a=ANTIG.find(x=>x.v===b); return a?a.c:'#7a8494'; }
 function diasTxt(p){ const d=diasCRM(p); if(d===null) return 's/d'; return d===0?'hoy' : d===1?'1 día' : d+' días'; }
-function setCampo(id,campo,valor){ const p=DB.propiedades.find(p=>p.id===id); if(!p)return; p[campo]=valor; save(); if(campo==='gestion') renderProps(); }
+function setCampo(id,campo,valor){ const p=DB.propiedades.find(p=>p.id===id); if(!p)return; p[campo]=valor; save(); liveUpsert(p); if(campo==='gestion') renderProps(); }
 function gotoGestion(v){ propFilter.gestion=[v]; propFilter.zonas=[...dashFilter.zonas]; propFilter.tips=[...dashFilter.tips]; propFilter.antig=[]; propFilter.q=''; show('propiedades'); }
 
 /* -------------------- MULTISELECT (desplegable con checkboxes) -------------------- */
@@ -229,10 +253,15 @@ document.addEventListener('click',e=>{
 let fichaId=null;
 function esc(s){ return (s==null?'':(''+s)).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function hoyStr(){ return new Date().toISOString().slice(0,10); }
-function openFicha(id){ const p=DB.propiedades.find(x=>x.id===id); if(!p)return; if(!p.contacto) p.contacto={nombre:'',telefono:'',email:'',inmobiliaria:''}; if(!Array.isArray(p.acciones)) p.acciones=[]; fichaId=id; renderFicha(); document.getElementById('ficha').showModal(); }
+function openFicha(id){ const p=DB.propiedades.find(x=>x.id===id); if(!p)return; if(!p.contacto) p.contacto={nombre:'',telefono:'',email:'',inmobiliaria:''}; if(!Array.isArray(p.acciones)) p.acciones=[]; p._notasLoaded=false; fichaId=id; renderFicha(); document.getElementById('ficha').showModal(); if(sbUser) loadNotas(id); }
 function renderFicha(){
   const p=DB.propiedades.find(x=>x.id===fichaId); if(!p) return; const c=p.contacto||{};
-  const hist=[...(p.acciones||[])].sort((a,b)=>(''+b.fecha).localeCompare(''+a.fecha));
+  /* notas: en vivo desde Supabase si hay sesión; si no, las locales (p.acciones) */
+  const live=!!sbUser;
+  const hist = live
+    ? (p._notas||[]).map(x=>({key:'N'+x.id, fecha:(''+(x.created_at||'')).slice(0,10), autor:x.autor, texto:x.texto, id:x.id}))
+    : [...(p.acciones||[])].sort((a,b)=>(''+b.fecha).localeCompare(''+a.fecha)).map(a=>({key:'L', fecha:a.fecha, autor:a.autor, texto:a.texto, legacy:a}));
+  const cargando = live && !p._notasLoaded;
   document.getElementById('ficha-h').textContent='Ficha · '+p.direccion+' ('+zoneName(p.zona)+')';
   document.getElementById('ficha-b').innerHTML=`
     <div class="small muted" style="margin-bottom:4px">En el CRM desde <b style="color:${antigColor(p)}">${p.fecha_alta||'s/d'}</b> · <b style="color:${antigColor(p)}">${diasTxt(p)}</b>${antigBucket(p)==='nuevas'?' <span class="pill" style="background:#0F6FC6">NUEVA</span>':''}${p.fecha_aviso?` <span class="muted">· aviso publicado ${p.fecha_aviso}</span>`:''}</div>
@@ -256,22 +285,24 @@ function renderFicha(){
       <div><label>Fecha de seguimiento</label><input id="c_fseg" type="date" value="${p.fecha_seguimiento||''}"></div>
       <div><label>Aviso</label>${p.url?`<div style="padding-top:7px"><a href="${p.url}" target="_blank">Abrir aviso ↗</a></div>`:'<div class="small muted" style="padding-top:8px">—</div>'}</div>
     </div>
-    <h4>Notas y acciones de los analistas (${hist.length})</h4>
+    <h4>Notas y acciones de los analistas (${hist.length})${live?' <span class="pill" style="background:#0F6FC6">en vivo</span>':' <span class="pill" style="background:#8892a0">local</span>'}</h4>
     <div style="max-height:190px;overflow:auto;border:1px solid #e8edf6;border-radius:6px;padding:4px 6px;background:#fafcff">
-      ${hist.length? hist.map(a=>`<div style="display:flex;gap:8px;align-items:center;padding:5px 0;border-bottom:1px solid #eef2f9"><span class="pill" style="background:#2E5496;white-space:nowrap">${a.fecha}</span>${a.autor?`<span class="pill" style="background:#1F3864;white-space:nowrap">${esc(a.autor)}</span>`:'<span class="pill" style="background:#8892a0;white-space:nowrap">s/firma</span>'}<span style="flex:1">${esc(a.texto)}</span><button class="act ghost mini" type="button" onclick="delAccion('${a.fecha}','${encodeURIComponent(a.texto)}')">✕</button></div>`).join('') : '<p class="small muted" style="margin:6px 2px">Sin notas todavía. Registrá la primera abajo.</p>'}
+      ${cargando? '<p class="small muted" style="margin:6px 2px">Cargando notas…</p>' : (hist.length? hist.map(a=>`<div style="display:flex;gap:8px;align-items:center;padding:5px 0;border-bottom:1px solid #eef2f9"><span class="pill" style="background:#2E5496;white-space:nowrap">${a.fecha||'s/f'}</span>${a.autor?`<span class="pill" style="background:#1F3864;white-space:nowrap">${esc(a.autor)}</span>`:'<span class="pill" style="background:#8892a0;white-space:nowrap">s/firma</span>'}<span style="flex:1">${esc(a.texto)}</span><button class="act ghost mini" type="button" onclick="${a.id!==undefined?`delNota(${a.id})`:`delAccion('${a.fecha}','${encodeURIComponent(a.texto)}')`}">✕</button></div>`).join('') : '<p class="small muted" style="margin:6px 2px">Sin notas todavía. Registrá la primera abajo.</p>')}
     </div>
     <div class="toolbar" style="margin-top:8px">
-      <input type="date" id="na_fecha" value="${hoyStr()}" style="max-width:150px">
+      ${live?'':`<input type="date" id="na_fecha" value="${hoyStr()}" style="max-width:150px">`}
       <input id="na_texto" placeholder="Nota o acción (ej: llamé, dejé mensaje, visité…)" style="flex:1;min-width:180px">
       <button class="act" type="button" onclick="addAccion()">+ Registrar${currentAnalyst()?' como '+esc(currentAnalyst()):''}</button>
     </div>
-    ${currentAnalyst()?'':'<p class="small muted" style="margin:4px 2px;color:#c0392b">⚠ Elegí quién sos arriba a la derecha para que la nota quede firmada.</p>'}`;
+    ${currentAnalyst()?'':`<p class="small muted" style="margin:4px 2px;color:#c0392b">⚠ ${sbCfg().url?'Ingresá con tu usuario':'Elegí quién sos'} arriba a la derecha para que la nota quede firmada.</p>`}`;
 }
-function syncFichaInputs(){ const p=DB.propiedades.find(x=>x.id===fichaId); if(!p)return; p.contacto={nombre:val('c_nombre'),inmobiliaria:val('c_inmo'),telefono:val('c_tel'),email:val('c_mail')}; p.proxima_accion=val('c_pacc'); p.fecha_seguimiento=val('c_fseg'); }
-function addAccion(){ const p=DB.propiedades.find(x=>x.id===fichaId); const f=val('na_fecha')||hoyStr(); const t=(val('na_texto')||'').trim(); if(!t) return;
-  if(!currentAnalyst() && !confirm('No elegiste analista: la nota quedará sin firma. ¿Registrar igual?')) return;
-  syncFichaInputs(); p.acciones.push({fecha:f,texto:t,autor:currentAnalyst()}); save(); renderFicha(); }
-function delAccion(fecha,encTexto){ const p=DB.propiedades.find(x=>x.id===fichaId); const t=decodeURIComponent(encTexto); const i=p.acciones.findIndex(a=>a.fecha===fecha&&a.texto===t); if(i>=0){ syncFichaInputs(); p.acciones.splice(i,1); save(); renderFicha(); } }
+function syncFichaInputs(){ const p=DB.propiedades.find(x=>x.id===fichaId); if(!p)return; p.contacto={nombre:val('c_nombre'),inmobiliaria:val('c_inmo'),telefono:val('c_tel'),email:val('c_mail')}; p.proxima_accion=val('c_pacc'); p.fecha_seguimiento=val('c_fseg'); save(); liveUpsert(p); }
+function addAccion(){ const p=DB.propiedades.find(x=>x.id===fichaId); const t=(val('na_texto')||'').trim(); if(!t) return;
+  if(!currentAnalyst() && !confirm('No hay analista identificado: la nota quedará sin firma. ¿Registrar igual?')) return;
+  syncFichaInputs();
+  if(sbUser){ logAccion(p,t); return; }
+  p.acciones.push({fecha:val('na_fecha')||hoyStr(),texto:t,autor:currentAnalyst()}); save(); renderFicha(); }
+function delAccion(fecha,encTexto){ const p=DB.propiedades.find(x=>x.id===fichaId); const t=decodeURIComponent(encTexto); const i=p.acciones.findIndex(a=>a.fecha===fecha&&a.texto===t); if(i>=0){ p.acciones.splice(i,1); save(); renderFicha(); } }
 function closeFicha(saveIt){ if(saveIt){ syncFichaInputs(); save(); } document.getElementById('ficha').close(); if(document.getElementById('v-propiedades').classList.contains('active')) renderProps(); if(document.getElementById('v-dashboard').classList.contains('active')) renderDashboard(); }
 
 /* -------------------- ACTUALIZACIÓN DE BASE (merge con dedupe por URL) -------------------- */
@@ -885,11 +916,11 @@ function renderBase(){
   document.getElementById('v-base').innerHTML=`
     <h2>Base de datos</h2>
     <div class="panel">
-      <h3 style="margin-top:0">☁ Nube (Supabase) ${_sb.url?'<span class="pill" style="background:#0F6FC6">conectado</span>':'<span class="pill" style="background:#8892a0">sin configurar</span>'}</h3>
-      <p class="small muted">Base en la nube (multi-dispositivo) + auto-refresh programado. Seguí el runbook <code>MIGRACION_SUPABASE.md</code>. No pega la anon key en ningún archivo público.</p>
+      <h3 style="margin-top:0">☁ Nube (Supabase) ${_sb.url?'<span class="pill" style="background:#0F6FC6">conectado</span>':'<span class="pill" style="background:#8892a0">sin configurar</span>'} ${sbUser?`<span class="pill" style="background:#1F3864">sesión: ${esc(analystName(sbUser))}</span>`:(_sb.url?'<span class="pill" style="background:#c0392b">sin sesión — tocá Ingresar arriba</span>':'')}</h3>
+      <p class="small muted">Base en la nube multi-analista con login. Runbook: <code>SUPABASE_ANALISTAS.md</code>. La <b>publishable key</b> puede ir en el navegador (respeta permisos); la <b>secret</b> NUNCA.</p>
       <div class="grid" style="max-width:660px">
         <div><label>Project URL</label><input id="sb_url_in" value="${esc(_sb.url)}" placeholder="https://xxxx.supabase.co"></div>
-        <div><label>anon key</label><input id="sb_key_in" value="${esc(_sb.key)}" placeholder="eyJhbGci..."></div>
+        <div><label>publishable / anon key</label><input id="sb_key_in" value="${esc(_sb.key)}" placeholder="sb_publishable_… (o eyJ… legacy)"></div>
       </div>
       <div class="toolbar" style="margin-top:10px">
         <button class="act" onclick="sbConnect()">Conectar</button>
@@ -899,7 +930,7 @@ function renderBase(){
         <button class="act ghost" onclick="genSQL()">Descargar SQL (datos)</button>
       </div>
       <p class="small muted" style="margin-top:6px"><b>Fechas de alta:</b> el botón de arriba completa la antigüedad en el CRM de las propiedades que quedaron en <b>s/d</b>, usando el <code>created_at</code> de Supabase (cuándo entraron realmente a tu base). No toca las que ya tienen fecha.</p>
-      <p class="small muted" style="margin-top:6px">⚠ Modo simple: la anon key permite leer/escribir. Mantené este archivo privado. Para login por usuario, ver Paso 6 del runbook.</p>
+      <p class="small muted" style="margin-top:6px">🔒 Con login activo, cada analista entra con su usuario; las notas se guardan firmadas en la tabla <code>notas</code> y no se pisan. "Subir/Traer base" son para sincronización completa (cuidado: Subir pisa todo lo de la nube) — el trabajo diario ya escribe en vivo.</p>
     </div>
     <div class="panel">
       <h3 style="margin-top:0">Respaldo y portabilidad</h3>
@@ -929,6 +960,13 @@ create table propiedades (
 --     add column if not exists lat numeric, add column if not exists lon numeric;
 -- (sin esas columnas el CRM sigue funcionando: la antigüedad usa created_at y el mapa ubica por zona)
 
+-- notas colaborativas por analista (cada nota es una fila → nunca se pisan). Ver SUPABASE_ANALISTAS.md
+create table notas (
+  id bigint generated always as identity primary key,
+  propiedad_id text references propiedades(id) on delete cascade,
+  autor text, autor_uid uuid default auth.uid(), texto text not null,
+  created_at timestamptz default now());
+
 create table valorizacion (
   zona text references zonas(id), factor text, score int,
   primary key (zona, factor));
@@ -949,14 +987,19 @@ function importJSON(e){ const f=e.target.files[0]; if(!f)return; const r=new Fil
 /* -------------------- NUBE (Supabase) -------------------- */
 let sb=null;
 function sbCfg(){ return {url:localStorage.getItem('sb_url')||'', key:localStorage.getItem('sb_key')||''}; }
-function ensureSb(){ const c=sbCfg(); if(!c.url||!c.key){ alert('Primero conectá: pegá Project URL + anon key y tocá "Conectar".'); return false; } if(!window.supabase){ alert('No cargó la librería de Supabase (¿sin internet?).'); return false; } if(!sb) sb=window.supabase.createClient(c.url,c.key); return true; }
-function sbConnect(){ const url=(val('sb_url_in')||'').trim(), key=(val('sb_key_in')||'').trim(); if(!url||!key){ alert('Completá URL y anon key.'); return; } localStorage.setItem('sb_url',url); localStorage.setItem('sb_key',key); sb=null; if(ensureSb()){ alert('Cliente Supabase creado. Probá "Traer base ↓" o "Subir base ↑".'); renderBase(); } }
+/* silencioso: devuelve el cliente o null, sin alertar */
+function sbClient(){ const c=sbCfg(); if(!c.url||!c.key||!window.supabase) return null; if(!sb) sb=window.supabase.createClient(c.url,c.key); return sb; }
+function ensureSb(){ if(!sbClient()){ alert('Primero conectá: pegá Project URL + publishable key y tocá "Conectar".'); return false; } return true; }
+/* restaura la sesión guardada al cargar y escucha cambios de login/logout */
+async function sbInit(){ const c=sbClient(); if(!c){ renderWhoami(); return; } try{ const r=await c.auth.getSession(); sbUser=r.data.session? r.data.session.user : null;
+    c.auth.onAuthStateChange(function(_e,session){ sbUser=session? session.user : null; renderWhoami(); }); }catch(e){} renderWhoami(); }
+function sbConnect(){ const url=(val('sb_url_in')||'').trim(), key=(val('sb_key_in')||'').trim(); if(!url||!key){ alert('Completá URL y publishable key.'); return; } localStorage.setItem('sb_url',url); localStorage.setItem('sb_key',key); sb=null; sbUser=null; if(sbClient()){ sbInit(); alert('Conexión guardada. Ahora tocá "Ingresar" (arriba a la derecha) con tu usuario de analista.'); renderBase(); } }
 function numN(v){ return (v===''||v===undefined||v===null||isNaN(+v))?null:+v; }
 function dtN(v){ return v?v:null; }
 function toRow(p){ return {id:p.id,zona:p.zona,tipologia:p.tipologia,direccion:p.direccion,m2:numN(p.m2),precio_pub:numN(p.precio_pub),descuento:numN(p.descuento),precio_real:numN(p.precio_real),usd_m2:numN(p.usd_m2),fecha_aviso:dtN(p.fecha_aviso),fecha_alta:dtN(p.fecha_alta),lat:numN(p.lat),lon:numN(p.lon),estado:p.estado||'',comentarios:p.comentarios||'',gestion:p.gestion||'Sin clasificar',proxima_accion:p.proxima_accion||'',fecha_seguimiento:dtN(p.fecha_seguimiento),contacto:p.contacto||{},acciones:p.acciones||[],portal:p.portal||'',url:p.url||''}; }
 /* alta en CRM: si la tabla no tiene fecha_alta, se usa created_at (fecha real de inserción en Supabase) */
 function fromRow(r){ return {id:r.id,zona:r.zona,tipologia:r.tipologia,direccion:r.direccion,m2:r.m2==null?'':r.m2,precio_pub:r.precio_pub==null?'':r.precio_pub,descuento:r.descuento==null?'':r.descuento,precio_real:r.precio_real==null?'':r.precio_real,usd_m2:r.usd_m2==null?'':r.usd_m2,fecha_aviso:r.fecha_aviso||'',fecha_alta:r.fecha_alta||(r.created_at?(''+r.created_at).slice(0,10):''),lat:r.lat==null?'':r.lat,lon:r.lon==null?'':r.lon,estado:r.estado||'',comentarios:r.comentarios||'',gestion:r.gestion||'Sin clasificar',proxima_accion:r.proxima_accion||'',fecha_seguimiento:r.fecha_seguimiento||'',contacto:r.contacto||{nombre:'',telefono:'',email:'',inmobiliaria:''},acciones:r.acciones||[],portal:r.portal||'',url:r.url||''}; }
-async function sbPush(){ if(!ensureSb()) return; try{
+async function sbPush(){ if(!ensureSb()) return; if(!sbUser){ alert('Ingresá primero (botón "Ingresar" arriba a la derecha). Las tablas requieren sesión.'); return; } try{
     const zonas=DB.zonas.map(z=>Object.assign({},z,{valorizacion:DB.valorizacion[z.id]||{}}));
     let r=await sb.from('zonas').upsert(zonas,{onConflict:'id'}); if(r.error) throw r.error;
     const rows=DB.propiedades.map(toRow);
@@ -973,7 +1016,7 @@ async function sbPush(){ if(!ensureSb()) return; try{
     alert('Base subida a Supabase:\n• '+DB.zonas.length+' zonas\n• '+DB.propiedades.length+' propiedades\n• '+DB.historico.length+' puntos históricos');
   }catch(e){ alert('Error al subir: '+(e.message||e)+'\n(copiame este mensaje y lo ajustamos)'); } }
 /* completa fecha_alta (antigüedad EN EL CRM) de las propiedades en s/d con el created_at real de Supabase */
-async function sbFillAltas(){ if(!ensureSb()) return; try{
+async function sbFillAltas(){ if(!ensureSb()) return; if(!sbUser){ alert('Ingresá primero (botón "Ingresar" arriba a la derecha).'); return; } try{
     const r=await sb.from('propiedades').select('id,url,fecha_alta,created_at'); if(r.error) throw r.error;
     const byId={}, byUrl={};
     (r.data||[]).forEach(x=>{ const f=x.fecha_alta||(x.created_at?(''+x.created_at).slice(0,10):''); if(!f) return; byId[x.id]=f; if(x.url) byUrl[x.url]=f; });
@@ -983,7 +1026,7 @@ async function sbFillAltas(){ if(!ensureSb()) return; try{
     alert('Fechas de alta completadas: '+n+' propiedad(es).'+(faltan?'\n'+faltan+' siguen en s/d (no están en Supabase): cargalas a mano en la ficha o subí la base primero.':''));
     renderProps();
   }catch(e){ alert('Error al traer fechas de alta: '+(e.message||e)); } }
-async function sbPull(){ if(!ensureSb()) return; if(!confirm('Traer la base de Supabase reemplaza la base local. ¿Continuar?')) return; try{
+async function sbPull(){ if(!ensureSb()) return; if(!sbUser){ alert('Ingresá primero (botón "Ingresar" arriba a la derecha). Las tablas requieren sesión.'); return; } if(!confirm('Traer la base de Supabase reemplaza la base local. ¿Continuar?')) return; try{
     const z=await sb.from('zonas').select('*'); if(z.error) throw z.error;
     const p=await sb.from('propiedades').select('*'); if(p.error) throw p.error;
     const h=await sb.from('historico').select('*'); if(h.error) throw h.error;
@@ -1014,6 +1057,7 @@ dlg.addEventListener('close',()=>{ if(dlg.returnValue==='ok'&&dlgCb) dlgCb(); dl
 /* serie histórica de Maldonado: se carga una vez si la base no la tiene (botón en Histórico para recargarla) */
 if(!DB.historico.some(h=>h.zona==='zMaldonado')) loadHistMaldonado(false);
 renderWhoami();
+sbInit();
 show('dashboard');
 </script>
 </body>
