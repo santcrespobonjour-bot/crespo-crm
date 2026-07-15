@@ -142,7 +142,7 @@ function currentAnalyst(){ if(sbUser) return analystName(sbUser); return localSt
 function setAnalyst(v){ if(v) localStorage.setItem('crespo_analista',v); else localStorage.removeItem('crespo_analista'); renderWhoami(); if(fichaId&&document.getElementById('ficha').open) renderFicha(); }
 function renderWhoami(){ const box=document.getElementById('whoami'); if(!box) return;
   const cfg=sbCfg(), configured=!!(cfg.url&&cfg.key);
-  if(sbUser){ box.innerHTML=`<span class="small">👤 <b style="color:#fff">${esc(analystName(sbUser))}</b></span> <button class="act ghost mini" onclick="logout()">Salir</button>`; return; }
+  if(sbUser){ box.innerHTML=`<span class="small">👤 <b style="color:#fff">${esc(analystName(sbUser))}</b></span> <button class="act ghost mini" onclick="changePassword()" title="Definir o cambiar contraseña / nombre">🔑 Clave</button> <button class="act ghost mini" onclick="logout()">Salir</button>`; return; }
   if(configured){ box.innerHTML=`<span class="small" style="color:#ffd0d0">sin sesión</span> <button class="act mini" onclick="loginDialog()">Ingresar</button>`; return; }
   const cur=localStorage.getItem('crespo_analista')||'';
   box.innerHTML=`<span class="small" style="color:#cdd8ef">Analista:</span>
@@ -162,6 +162,20 @@ async function doLogin(){ const c=sbClient(); const email=(val('lg_mail')||'').t
     sbUser=r.data.user; renderWhoami(); alert('Sesión iniciada como '+analystName(sbUser)+'.'); if(fichaId&&document.getElementById('ficha').open){ loadNotas(fichaId); }
   }catch(e){ alert('No se pudo ingresar: '+(e.message||e)); } }
 async function logout(){ const c=sbClient(); if(c){ try{ await c.auth.signOut(); }catch(e){} } sbUser=null; renderWhoami(); }
+function changePassword(){ if(!sbUser){ alert('Ingresá primero.'); return; }
+  openDlg('Definir / cambiar contraseña', `<div class="grid">
+    <div style="grid-column:1/-1"><label>Nueva contraseña</label><input id="pw1" type="password" autocomplete="new-password"></div>
+    <div style="grid-column:1/-1"><label>Repetir contraseña</label><input id="pw2" type="password" autocomplete="new-password"></div>
+  </div><p class="small muted">Mínimo 6 caracteres. Con esto entrás con tu email + contraseña, sin depender del magic link. También podés ponerle un nombre visible abajo.</p>
+  <div class="grid"><div style="grid-column:1/-1"><label>Nombre visible (opcional, ej: Santiago)</label><input id="pw_name" value="${esc(analystName(sbUser))}"></div></div>`, doChangePassword); }
+async function doChangePassword(){ const a=val('pw1'), b=val('pw2'), nombre=(val('pw_name')||'').trim();
+  if(a && a.length<6){ alert('La contraseña debe tener al menos 6 caracteres.'); return; }
+  if(a!==b){ alert('Las dos contraseñas no coinciden.'); return; }
+  const c=sbClient(); const payload={}; if(a) payload.password=a; if(nombre) payload.data={name:nombre};
+  if(!payload.password && !payload.data){ return; }
+  try{ const r=await c.auth.updateUser(payload); if(r.error) throw r.error; if(r.data&&r.data.user) sbUser=r.data.user; renderWhoami();
+    alert((payload.password?'Contraseña definida. ':'')+ (payload.data?'Nombre actualizado. ':'') + (payload.password?'La próxima vez entrás con tu email y esta contraseña.':'')); }
+  catch(e){ alert('No se pudo actualizar: '+(e.message||e)); } }
 async function logAccion(p,texto){ if(sbUser){ const c=sbClient(); try{ const r=await c.from('notas').insert({propiedad_id:p.id,autor:currentAnalyst(),texto:texto}); if(r.error) throw r.error; await loadNotas(p.id); }catch(e){ alert('No se pudo registrar la nota: '+(e.message||e)); } }
   else { p.acciones.push({fecha:hoyStr(),texto:texto,autor:currentAnalyst()}); save(); if(fichaId===p.id&&document.getElementById('ficha').open) renderFicha(); } }
 async function loadNotas(id){ const c=sbClient(); if(!c||!sbUser) return; try{ const r=await c.from('notas').select('*').eq('propiedad_id',id).order('created_at',{ascending:false}); if(r.error) throw r.error;
