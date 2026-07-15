@@ -205,6 +205,7 @@ async function loadNotas(id){ const c=sbClient(); if(!c||!sbUser) return; try{ c
   }catch(e){ console.warn('loadNotas',e); } }
 async function delNota(id){ if(!confirm('¿Borrar esta nota?')) return; const c=sbClient(); try{ const r=await c.from('notas').delete().eq('id',id); if(r.error) throw r.error; await loadNotas(fichaId); }catch(e){ alert('No se pudo borrar: '+(e.message||e)); } }
 async function liveUpsert(p){ if(!sbUser) return; const c=sbClient(); try{ const r=await c.from('propiedades').upsert(toRow(p),{onConflict:'id'}); if(r.error) throw r.error; }catch(e){ console.warn('liveUpsert',e); } }
+async function liveUpsertZona(z){ if(!sbUser) return; const c=sbClient(); try{ const r=await c.from('zonas').upsert(Object.assign({},z,{valorizacion:DB.valorizacion[z.id]||{}}),{onConflict:'id'}); if(r.error) throw r.error; }catch(e){ console.warn('liveUpsertZona',e); } }
 
 /* -------------------- PLANTILLAS DE MENSAJES (WhatsApp / Mail) -------------------- */
 const MSG_DEFAULT=[
@@ -510,7 +511,7 @@ function editZona(id){
       z.tipologia=val('f_tipologia'); z.usd_m2_ref=+val('f_usd'); z.lat=+val('f_lat'); z.lon=+val('f_lon');
       z.perfil=val('f_perfil'); z.notas=val('f_notas');
       if(!id){ DB.zonas.push(z); DB.valorizacion[z.id]={obra:0,dens:0,transp:0,comercio:0,educ:0,infra:0,salud:0,natural:0,seg:0,demanda:0}; }
-      save(); renderZonas();
+      save(); liveUpsertZona(z); renderZonas();
     });
 }
 
@@ -596,7 +597,7 @@ function editProp(id){
       else if(pub){ p.precio_real=pub; }
       if(m2 && p.precio_real){ p.usd_m2=Math.round(p.precio_real/m2*10)/10; } else if(val('f_usd')){ p.usd_m2=+val('f_usd'); }
       if(!id) DB.propiedades.push(p);
-      save(); renderProps();
+      save(); liveUpsert(p); renderProps();
     });
 }
 
@@ -624,7 +625,7 @@ function renderValor(){
       <p class="small muted" style="margin-top:12px">Fórmula: IV = Σ(peso × score/5). Editá los deslizadores; se guarda automáticamente. Marco completo en <code>docs/factores-valorizacion.md</code>.</p>
     </div>`;
 }
-function setScore(k,v){ if(!DB.valorizacion[valZona]) DB.valorizacion[valZona]={}; DB.valorizacion[valZona][k]=+v; save(); renderValor(); }
+function setScore(k,v){ if(!DB.valorizacion[valZona]) DB.valorizacion[valZona]={}; DB.valorizacion[valZona][k]=+v; save(); const z=DB.zonas.find(z=>z.id===valZona); if(z){ clearTimeout(window._tz); window._tz=setTimeout(function(){ liveUpsertZona(z); },800); } renderValor(); }
 
 /* -------------------- HISTÓRICO -------------------- */
 function tipoBase(t){ if(/Apartamento|Monoambiente/i.test(t)) return 'Apartamento'; if(/Casa/i.test(t)) return 'Casa'; if(/Terreno/i.test(t)) return 'Terreno'; if(/Chacra|Campo/i.test(t)) return 'Rural'; return t; }
@@ -938,7 +939,7 @@ async function geocodeProps(){
   for(const p of cand){ const z=DB.zonas.find(z=>z.id===p.zona);
     const q=encodeURIComponent((p.direccion||'').replace(/\(.*?\)/g,'').trim()+', '+(z?z.localidad||z.nombre:'')+', '+(z?z.departamento:'')+', Uruguay');
     try{ const r=await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q='+q,{headers:{'Accept':'application/json'}});
-      const d=await r.json(); if(d&&d[0]){ p.lat=+d[0].lat; p.lon=+d[0].lon; ok++; } else fail++;
+      const d=await r.json(); if(d&&d[0]){ p.lat=+d[0].lat; p.lon=+d[0].lon; ok++; liveUpsert(p); } else fail++;
     }catch(e){ fail++; }
     await new Promise(res=>setTimeout(res,1100));
   }
@@ -1100,3 +1101,4 @@ show('dashboard');
 </script>
 </body>
 </html>
+
