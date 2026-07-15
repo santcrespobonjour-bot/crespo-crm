@@ -68,6 +68,7 @@
 <header>
   <div class="brand">Crespo Real State<small>CRM · Estudio del Mercado</small></div>
   <nav id="nav"></nav>
+  <div id="whoami" style="margin-left:auto"></div>
 </header>
 <main>
   <section class="view" id="v-dashboard"></section>
@@ -132,6 +133,54 @@ const GESTION=[
   {v:'Cerrada / Comprada', c:'#1F3864'},
 ];
 function gColor(v){ const g=GESTION.find(g=>g.v===v); return g? g.c : '#8892a0'; }
+
+/* -------------------- ANALISTAS (firma de notas; provisional hasta el login por Supabase Auth) -------------------- */
+const ANALISTAS=['Mario','Martín','Santiago'];
+function currentAnalyst(){ return localStorage.getItem('crespo_analista')||''; }
+function setAnalyst(v){ if(v) localStorage.setItem('crespo_analista',v); else localStorage.removeItem('crespo_analista'); renderWhoami(); if(fichaId&&document.getElementById('ficha').open) renderFicha(); }
+function renderWhoami(){ const cur=currentAnalyst(); const box=document.getElementById('whoami'); if(!box) return;
+  box.innerHTML=`<span class="small" style="color:#cdd8ef">Analista:</span>
+    <select onchange="setAnalyst(this.value)" style="width:auto;display:inline-block;background:${cur?'#fff':'#ffe9e9'};font-weight:700;padding:4px 8px">
+      <option value="" ${cur?'':'selected'}>— elegí quién sos —</option>
+      ${ANALISTAS.map(a=>`<option ${cur===a?'selected':''}>${a}</option>`).join('')}
+    </select>`;
+}
+
+/* -------------------- PLANTILLAS DE MENSAJES (WhatsApp / Mail) -------------------- */
+const MSG_DEFAULT=[
+  {nombre:'Consulta inicial', texto:'Hola, te consulto por la propiedad de {dir} ({zona}). ¿Sigue disponible? Gracias. — {analista}, Crespo Real State'},
+  {nombre:'Pedir datos', texto:'Hola, estoy interesado en {dir} ({tipologia}, {zona}). ¿Me pasás metraje, gastos comunes y si acepta oferta? Gracias. — {analista}'},
+  {nombre:'Coordinar visita', texto:'Hola, quería coordinar una visita a {dir} ({zona}). ¿Qué disponibilidad tenés esta semana? — {analista}, Crespo Real State'},
+];
+function msgTemplates(){ try{ const r=localStorage.getItem('crespo_msg_tpl'); return r?JSON.parse(r):MSG_DEFAULT.slice(); }catch(e){ return MSG_DEFAULT.slice(); } }
+function saveTemplates(arr){ localStorage.setItem('crespo_msg_tpl', JSON.stringify(arr)); }
+function fillTpl(txt,p){ const z=DB.zonas.find(z=>z.id===p.zona)||{}; const precio=p.precio_real||p.precio_pub;
+  return (txt||'').replace(/{dir}/g,p.direccion||'').replace(/{zona}/g,z.nombre||'').replace(/{tipologia}/g,p.tipologia||'')
+    .replace(/{precio}/g,precio?('US$ '+(+precio).toLocaleString('es-UY')):'a confirmar').replace(/{m2}/g,p.m2||'').replace(/{usdm2}/g,p.usd_m2||'')
+    .replace(/{analista}/g,currentAnalyst()||'Crespo Real State'); }
+function waLink(tel,msg){ const num=(''+(tel||'')).replace(/[^\d]/g,''); return 'https://wa.me/'+num+'?text='+encodeURIComponent(msg); }
+function mailLink(mail,p,msg){ return 'mailto:'+encodeURIComponent(mail||'')+'?subject='+encodeURIComponent('Consulta — '+(p.direccion||'propiedad')+' ('+(DB.zonas.find(z=>z.id===p.zona)||{}).nombre+')')+'&body='+encodeURIComponent(msg); }
+function sendWhatsApp(){ const p=DB.propiedades.find(x=>x.id===fichaId); if(!p) return; const c=p.contacto||{};
+  const tel=val('c_tel')||c.telefono; if(!tel){ alert('Cargá primero el teléfono del contacto.'); return; }
+  const t=msgTemplates()[+val('msg_tpl')||0]; const msg=fillTpl(t.texto,p); syncFichaInputs();
+  window.open(waLink(tel,msg),'_blank');
+  p.acciones.push({fecha:hoyStr(),texto:'WhatsApp enviado ('+t.nombre+')',autor:currentAnalyst()}); save(); renderFicha(); }
+function sendMail(){ const p=DB.propiedades.find(x=>x.id===fichaId); if(!p) return; const c=p.contacto||{};
+  const mail=val('c_mail')||c.email; if(!mail){ alert('Cargá primero el email del contacto.'); return; }
+  const t=msgTemplates()[+val('msg_tpl')||0]; const msg=fillTpl(t.texto,p); syncFichaInputs();
+  window.open(mailLink(mail,p,msg),'_blank');
+  p.acciones.push({fecha:hoyStr(),texto:'Mail enviado ('+t.nombre+')',autor:currentAnalyst()}); save(); renderFicha(); }
+function editTemplates(){ const tpl=msgTemplates();
+  openDlg('Plantillas de mensajes', `<p class="small muted">Variables: <code>{dir}</code> <code>{zona}</code> <code>{tipologia}</code> <code>{precio}</code> <code>{m2}</code> <code>{usdm2}</code> <code>{analista}</code></p>
+    <div id="tpl_list">${tpl.map((t,i)=>`<div class="grid" style="border-bottom:1px solid #eef2f9;padding-bottom:6px;margin-bottom:6px">
+      <div style="grid-column:1/-1"><label>Nombre</label><input class="tpl_n" value="${esc(t.nombre)}"></div>
+      <div style="grid-column:1/-1"><label>Texto</label><textarea class="tpl_t" rows="2">${esc(t.texto)}</textarea></div>
+    </div>`).join('')}</div>
+    <button class="act ghost mini" type="button" onclick="var d=document.createElement('div');d.className='grid';d.style.cssText='border-bottom:1px solid #eef2f9;padding-bottom:6px;margin-bottom:6px';d.innerHTML='<div style=\\'grid-column:1/-1\\'><label>Nombre</label><input class=\\'tpl_n\\'></div><div style=\\'grid-column:1/-1\\'><label>Texto</label><textarea class=\\'tpl_t\\' rows=2></textarea></div>';document.getElementById('tpl_list').appendChild(d)">+ Agregar plantilla</button>`,
+    ()=>{ const ns=[...document.querySelectorAll('.tpl_n')].map(x=>x.value), ts=[...document.querySelectorAll('.tpl_t')].map(x=>x.value);
+      const arr=ns.map((n,i)=>({nombre:n||('Plantilla '+(i+1)),texto:ts[i]||''})).filter(t=>t.texto.trim()); saveTemplates(arr.length?arr:MSG_DEFAULT.slice());
+      if(fichaId&&document.getElementById('ficha').open) renderFicha(); });
+}
 const SEED_COMMENTS={};
 const SEED_CONTACTS={};
 function migrate(){ DB.propiedades.forEach(p=>{ if(p.comentarios===undefined) p.comentarios = SEED_COMMENTS[p.id]||''; if(p.gestion===undefined) p.gestion='Sin clasificar'; if(p.proxima_accion===undefined) p.proxima_accion=''; if(p.fecha_seguimiento===undefined) p.fecha_seguimiento=''; if(p.contacto===undefined) p.contacto = SEED_CONTACTS[p.id] || {nombre:'',telefono:'',email:'',inmobiliaria:''}; if(!Array.isArray(p.acciones)) p.acciones=[];
@@ -194,24 +243,34 @@ function renderFicha(){
       <div><label>Teléfono</label><input id="c_tel" value="${esc(c.telefono)}" placeholder="+598…"></div>
       <div><label>Email</label><input id="c_mail" value="${esc(c.email)}"></div>
     </div>
+    <h4>Contactar <span class="small muted" style="font-weight:400">· abre el mensaje pre-armado; lo enviás vos</span></h4>
+    <div class="toolbar">
+      <select id="msg_tpl" style="max-width:210px">${msgTemplates().map((t,i)=>`<option value="${i}">${esc(t.nombre)}</option>`).join('')}</select>
+      <button class="act" type="button" style="background:#25D366" onclick="sendWhatsApp()">WhatsApp</button>
+      <button class="act" type="button" onclick="sendMail()">✉ Mail</button>
+      <button class="act ghost mini" type="button" onclick="editTemplates()">✎ Plantillas</button>
+    </div>
     <h4>Próxima acción a tomar</h4>
     <div class="grid">
       <div style="grid-column:1/-1"><label>¿Qué hay que hacer?</label><input id="c_pacc" value="${esc(p.proxima_accion)}" placeholder="ej: llamar inmobiliaria, coordinar visita"></div>
       <div><label>Fecha de seguimiento</label><input id="c_fseg" type="date" value="${p.fecha_seguimiento||''}"></div>
       <div><label>Aviso</label>${p.url?`<div style="padding-top:7px"><a href="${p.url}" target="_blank">Abrir aviso ↗</a></div>`:'<div class="small muted" style="padding-top:8px">—</div>'}</div>
     </div>
-    <h4>Historial de acciones (${hist.length})</h4>
-    <div style="max-height:170px;overflow:auto;border:1px solid #e8edf6;border-radius:6px;padding:4px 6px;background:#fafcff">
-      ${hist.length? hist.map(a=>`<div style="display:flex;gap:8px;align-items:center;padding:5px 0;border-bottom:1px solid #eef2f9"><span class="pill" style="background:#2E5496;white-space:nowrap">${a.fecha}</span><span style="flex:1">${esc(a.texto)}</span><button class="act ghost mini" type="button" onclick="delAccion('${a.fecha}','${encodeURIComponent(a.texto)}')">✕</button></div>`).join('') : '<p class="small muted" style="margin:6px 2px">Sin acciones registradas todavía. Registrá la primera abajo.</p>'}
+    <h4>Notas y acciones de los analistas (${hist.length})</h4>
+    <div style="max-height:190px;overflow:auto;border:1px solid #e8edf6;border-radius:6px;padding:4px 6px;background:#fafcff">
+      ${hist.length? hist.map(a=>`<div style="display:flex;gap:8px;align-items:center;padding:5px 0;border-bottom:1px solid #eef2f9"><span class="pill" style="background:#2E5496;white-space:nowrap">${a.fecha}</span>${a.autor?`<span class="pill" style="background:#1F3864;white-space:nowrap">${esc(a.autor)}</span>`:'<span class="pill" style="background:#8892a0;white-space:nowrap">s/firma</span>'}<span style="flex:1">${esc(a.texto)}</span><button class="act ghost mini" type="button" onclick="delAccion('${a.fecha}','${encodeURIComponent(a.texto)}')">✕</button></div>`).join('') : '<p class="small muted" style="margin:6px 2px">Sin notas todavía. Registrá la primera abajo.</p>'}
     </div>
     <div class="toolbar" style="margin-top:8px">
       <input type="date" id="na_fecha" value="${hoyStr()}" style="max-width:150px">
-      <input id="na_texto" placeholder="Describí la acción (ej: llamé, dejé mensaje, visité…)" style="flex:1;min-width:180px">
-      <button class="act" type="button" onclick="addAccion()">+ Registrar acción</button>
-    </div>`;
+      <input id="na_texto" placeholder="Nota o acción (ej: llamé, dejé mensaje, visité…)" style="flex:1;min-width:180px">
+      <button class="act" type="button" onclick="addAccion()">+ Registrar${currentAnalyst()?' como '+esc(currentAnalyst()):''}</button>
+    </div>
+    ${currentAnalyst()?'':'<p class="small muted" style="margin:4px 2px;color:#c0392b">⚠ Elegí quién sos arriba a la derecha para que la nota quede firmada.</p>'}`;
 }
 function syncFichaInputs(){ const p=DB.propiedades.find(x=>x.id===fichaId); if(!p)return; p.contacto={nombre:val('c_nombre'),inmobiliaria:val('c_inmo'),telefono:val('c_tel'),email:val('c_mail')}; p.proxima_accion=val('c_pacc'); p.fecha_seguimiento=val('c_fseg'); }
-function addAccion(){ const p=DB.propiedades.find(x=>x.id===fichaId); const f=val('na_fecha')||hoyStr(); const t=(val('na_texto')||'').trim(); if(!t) return; syncFichaInputs(); p.acciones.push({fecha:f,texto:t}); save(); renderFicha(); }
+function addAccion(){ const p=DB.propiedades.find(x=>x.id===fichaId); const f=val('na_fecha')||hoyStr(); const t=(val('na_texto')||'').trim(); if(!t) return;
+  if(!currentAnalyst() && !confirm('No elegiste analista: la nota quedará sin firma. ¿Registrar igual?')) return;
+  syncFichaInputs(); p.acciones.push({fecha:f,texto:t,autor:currentAnalyst()}); save(); renderFicha(); }
 function delAccion(fecha,encTexto){ const p=DB.propiedades.find(x=>x.id===fichaId); const t=decodeURIComponent(encTexto); const i=p.acciones.findIndex(a=>a.fecha===fecha&&a.texto===t); if(i>=0){ syncFichaInputs(); p.acciones.splice(i,1); save(); renderFicha(); } }
 function closeFicha(saveIt){ if(saveIt){ syncFichaInputs(); save(); } document.getElementById('ficha').close(); if(document.getElementById('v-propiedades').classList.contains('active')) renderProps(); if(document.getElementById('v-dashboard').classList.contains('active')) renderDashboard(); }
 
@@ -881,6 +940,7 @@ dlg.addEventListener('close',()=>{ if(dlg.returnValue==='ok'&&dlgCb) dlgCb(); dl
 
 /* serie histórica de Maldonado: se carga una vez si la base no la tiene (botón en Histórico para recargarla) */
 if(!DB.historico.some(h=>h.zona==='zMaldonado')) loadHistMaldonado(false);
+renderWhoami();
 show('dashboard');
 </script>
 </body>
