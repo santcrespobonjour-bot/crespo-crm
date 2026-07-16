@@ -822,18 +822,60 @@ function generarInforme(){
   const hoy=hoyStr();
   const money=v=>v?('US$ '+(+v).toLocaleString('es-UY')):'s/d';
   const años=proyCfg.años;
-  /* comparables ordenados por USD/m² */
+  const pivot=s.med; // la mediana manda: pivote de selección y de salida
+  /* comparables ordenados por USD/m² (asc) */
   const comps=[...sel].filter(p=>+p.usd_m2>0).sort((a,b)=>(+a.usd_m2)-(+b.usd_m2));
-  const barItems=comps.map(p=>({label:p.direccion+' ('+zoneName(p.zona)+')',v:Math.round(+p.usd_m2*10)/10}));
-  /* oportunidades = marcadas "Tomar acción" o, si no hay, las 3 de menor USD/m² */
-  let oport=sel.filter(p=>p.gestion==='Tomar acción');
-  if(!oport.length) oport=comps.slice(0,3);
+  /* selección curada: 5 principales sobre la mediana + piso (mín.) + techo (máx.) */
+  let compSel;
+  if(comps.length<=7){ compSel=comps.slice(); }
+  else{
+    const piso=comps[0], techo=comps[comps.length-1];
+    const principales=comps.filter(p=>+p.usd_m2>=pivot).slice(0,5);
+    const ids=new Set(); compSel=[];
+    [piso,...principales,techo].forEach(p=>{ if(p&&!ids.has(p.id)){ ids.add(p.id); compSel.push(p);} });
+    compSel.sort((a,b)=>(+a.usd_m2)-(+b.usd_m2));
+  }
+  const compRol=p=>{ if(comps.length&&p.id===comps[0].id) return 'Piso (mín.)'; if(comps.length&&p.id===comps[comps.length-1].id) return 'Techo (máx.)'; return (+p.usd_m2>=pivot)?'Representativo':'Bajo mediana'; };
+  /* -------- motor de oportunidades: jerarquizadas, con inversión y ganancia -------- */
+  const INV={reformaUSDm2:350, regulariz:8000};
+  const oportModelo=p=>{
+    const price=+(p.precio_real||p.precio_pub)||0, m2=+p.m2||0;
+    const com=((p.comentarios||'')+' '+(p.estado||'')+' '+(p.tipologia||'')).toLowerCase();
+    const esReciclar=/recicl|refacc|reforma/.test(com);
+    const esRegular=/regular|sin planos/.test(com);
+    const reforma=esReciclar&&m2?Math.round(m2*INV.reformaUSDm2):0;
+    const regular=esRegular?INV.regulariz:0;
+    const invTotal=price+reforma+regular;
+    const valorSalida=(m2&&pivot)?Math.round(m2*pivot):0;
+    const ganancia=(valorSalida&&invTotal)?valorSalida-invTotal:null;
+    const roi=(ganancia!=null&&invTotal)?Math.round(ganancia/invTotal*100):null;
+    const difMed=(pivot&&+p.usd_m2)?Math.round((+p.usd_m2/pivot-1)*100):null;
+    return {p,price,m2,esReciclar,esRegular,reforma,regular,invTotal,valorSalida,ganancia,roi,difMed};
+  };
+  /* pool: marcadas "Tomar acción" + comparables por debajo de la mediana (subvaluados) */
+  const pool=sel.filter(p=>((+p.precio_real||+p.precio_pub)>0) && (p.gestion==='Tomar acción' || (+p.usd_m2>0 && +p.usd_m2<pivot)));
+  const oport=[...new Map(pool.map(p=>[p.id,p])).values()].map(oportModelo)
+     .sort((a,b)=>{ const ga=a.ganancia==null?-1e12:a.ganancia, gb=b.ganancia==null?-1e12:b.ganancia; return gb-ga; })
+     .slice(0,6);
   /* bloque histórico+proyección por zona */
   const bloquesHist=zonasSel.map(zid=>{ const zserie=DB.historico.filter(h=>h.zona===zid).sort((a,b)=>a.anio-b.anio); if(zserie.length<2) return '';
-    const cg=cagr(zserie), ultimo=zserie[zserie.length-1];
-    return `<h3>${zoneName(zid)} — evolución ${zserie[0].anio}–${ultimo.anio} y proyección a ${ultimo.anio+años}</h3>
+    const cg=cagr(zserie), first=zserie[0], ultimo=zserie[zserie.length-1];
+    const accum=Math.round((ultimo.usd_m2/first.usd_m2-1)*100);
+    /* variaciones año a año */
+    const yoy=[]; for(let i=1;i<zserie.length;i++){ yoy.push({de:zserie[i-1].anio,a:zserie[i].anio,pct:(zserie[i].usd_m2/zserie[i-1].usd_m2-1)*100,punto:zserie[i]}); }
+    const maxUp=yoy.reduce((m,x)=>x.pct>m.pct?x:m,yoy[0]);
+    const maxDn=yoy.reduce((m,x)=>x.pct<m.pct?x:m,yoy[0]);
+    const filas=zserie.map((h,i)=>{ const v=i?(h.usd_m2/zserie[i-1].usd_m2-1)*100:null; const col=v==null?'':(v>=0?'#1F3864':'#b03030'); return `<tr><td>${h.anio}</td><td class="num">${(+h.usd_m2).toLocaleString('es-UY')}</td><td class="num" style="color:${col}">${v==null?'—':(v>=0?'+':'')+v.toFixed(1)+'%'}</td><td class="small">${esc(h.fuente||'s/d')}</td></tr>`; }).join('');
+    const driver=HIST_NOTES[zid]||'';
+    let narr=`Entre <b>${first.anio}</b> (US$${(+first.usd_m2).toLocaleString('es-UY')}/m²) y <b>${ultimo.anio}</b> (US$${(+ultimo.usd_m2).toLocaleString('es-UY')}/m²) el valor ${accum>=0?'apreció':'se ajustó'} <b>${accum>=0?'+':''}${accum}%</b> acumulado — CAGR <b>${cg===null?'s/d':cg.toFixed(1)+'%'}</b> anual. ${driver?driver.charAt(0).toUpperCase()+driver.slice(1):''}`;
+    let saltos='';
+    if(maxUp&&maxUp.pct>0.05) saltos+=` El mayor salto interanual fue <b>${maxUp.de}→${maxUp.a}</b> (<b>+${maxUp.pct.toFixed(1)}%</b>${maxUp.punto.fuente?`, según ${esc(maxUp.punto.fuente)}`:''}).`;
+    if(maxDn&&maxDn.pct<-0.05) saltos+=` La mayor corrección fue <b>${maxDn.de}→${maxDn.a}</b> (<b>${maxDn.pct.toFixed(1)}%</b>${maxDn.punto.fuente?`, ${esc(maxDn.punto.fuente)}`:''}).`;
+    return `<h3>${zoneName(zid)} — evolución ${first.anio}–${ultimo.anio} y proyección a ${ultimo.anio+años}</h3>
       ${lineChartProj(zserie,años)}
-      <p class="small">Variación acumulada ${zserie[0].anio}→${ultimo.anio}: <b>${Math.round((ultimo.usd_m2/zserie[0].usd_m2-1)*100)}%</b> · CAGR observado <b>${cg===null?'s/d':cg.toFixed(1)+'%'}</b> anual. Proyección base ${proyCfg.base}% (escenarios ${proyCfg.cons}%–${proyCfg.opt}%).</p>
+      <p class="small">${narr}${saltos}</p>
+      <table><thead><tr><th>Año</th><th class="num">USD/m²</th><th class="num">Var. a/a</th><th>Fuente del dato</th></tr></thead><tbody>${filas}</tbody></table>
+      <p class="small">Proyección base ${proyCfg.base}% anual (escenarios conservador ${proyCfg.cons}% – optimista ${proyCfg.opt}%):</p>
       ${proyTabla(zserie,años)}`;
   }).filter(Boolean).join('');
   /* factores de valorización por zona */
@@ -847,6 +889,7 @@ function generarInforme(){
     table{border-collapse:collapse;width:100%;font-size:11px;margin:4px 0} th,td{border-bottom:1px solid #e8edf6;padding:5px 7px;text-align:left} th{background:#1F3864;color:#fff} td.num,th.num{text-align:right;white-space:nowrap}
     .kpis{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0} .kpi{flex:1 1 120px;border:1px solid #e3e9f4;border-left:4px solid #0F6FC6;border-radius:7px;padding:9px 12px} .kpi .v{font-size:20px;font-weight:800;color:#1F3864} .kpi .l{font-size:10px;color:#5b6472;text-transform:uppercase;letter-spacing:.3px}
     .small{font-size:10.5px;color:#5b6472} .box{background:#eef2f9;border-left:4px solid #1F3864;padding:8px 10px;border-radius:0 6px 6px 0;margin:8px 0}
+    .op{border:1px solid #e3e9f4;border-radius:8px;padding:10px 12px;margin:9px 0;break-inside:avoid} .ophd{color:#1F3864;font-size:12.5px} .rank{display:inline-block;background:#1F3864;color:#fff;font-weight:800;border-radius:5px;padding:1px 7px;margin-right:5px;font-size:11px} table.opnum{margin:6px 0 0} table.opnum td{border:0;border-bottom:1px solid #f0f3f9;padding:3px 6px} table.opnum td:first-child{color:#5b6472;width:44%}
     .foot{margin-top:26px;border-top:1px solid #e8edf6;padding-top:8px;color:#7a8494;font-size:10px}
     .no-print{margin:0 0 14px} button{background:#0F6FC6;color:#fff;border:0;padding:9px 16px;border-radius:6px;font-weight:700;cursor:pointer;font-size:13px}
     @media print{ .no-print{display:none} .wrap{max-width:none;padding:0} body{font-size:11px} h2{break-after:avoid} table{break-inside:auto} tr{break-inside:avoid} svg{max-width:100%} @page{margin:14mm} }`;
@@ -863,18 +906,35 @@ function generarInforme(){
       <div class="kpi"><div class="v">${sel.length}</div><div class="l">Comparables</div></div>
     </div>
     <p class="small">La <b>mediana manda</b>: es el valor central de la muestra y no se distorsiona con extremos. El promedio se incluye solo como contraste.</p>
-    ${barItems.length?`<h3>Dispersión de comparables</h3>${barChartH(barItems)}`:''}
     <h2>Comparables</h2>
-    <table><thead><tr><th>Ubicación</th><th>Zona</th><th>Tipología</th><th class="num">m²</th><th class="num">Precio</th><th class="num">USD/m²</th><th>Fecha aviso</th><th>Gestión</th></tr></thead><tbody>
-    ${[...sel].sort((a,b)=>(+b.usd_m2||0)-(+a.usd_m2||0)).map(p=>`<tr><td>${esc(p.direccion||'')}</td><td>${esc(zoneName(p.zona))}</td><td>${esc(p.tipologia||'')}</td><td class="num">${p.m2||'s/d'}</td><td class="num">${p.precio_real?money(p.precio_real):money(p.precio_pub)}</td><td class="num"><b>${p.usd_m2||'s/d'}</b></td><td>${p.fecha_aviso||'s/d'}</td><td>${esc(p.gestion||'')}</td></tr>`).join('')}
+    <p class="small">Selección representativa: los <b>5 principales por encima de la mediana</b>${pivot?` (US$ ${pivot.toLocaleString('es-UY')}/m²)`:''} más el <b>piso</b> (mínimo) y el <b>techo</b> (máximo) del segmento, para acotar el rango sin ruido.${comps.length>compSel.length?` Se muestran ${compSel.length} de ${comps.length} comparables con USD/m² en base.`:''}</p>
+    <table><thead><tr><th>Ubicación</th><th>Zona</th><th>Tipología</th><th class="num">m²</th><th class="num">Precio</th><th class="num">USD/m²</th><th>Fecha aviso</th><th>Rol</th></tr></thead><tbody>
+    ${compSel.map(p=>`<tr><td>${esc(p.direccion||'')}</td><td>${esc(zoneName(p.zona))}</td><td>${esc(p.tipologia||'')}</td><td class="num">${p.m2||'s/d'}</td><td class="num">${p.precio_real?money(p.precio_real):money(p.precio_pub)}</td><td class="num"><b>${p.usd_m2||'s/d'}</b></td><td>${p.fecha_aviso||'s/d'}</td><td class="small">${compRol(p)}</td></tr>`).join('')}
     </tbody></table>
     ${bloquesHist?`<h2>Histórico y proyección</h2>${bloquesHist}`:''}
     <h2>Factores de valorización (IV)</h2>
     <table><thead><tr><th>Zona</th><th>Depto</th><th class="num">USD/m² ref.</th><th class="num">IV</th><th>Principales drivers</th></tr></thead><tbody>${bloquesIV}</tbody></table>
-    <h2>Oportunidades</h2>
-    ${oport.length?`<table><thead><tr><th>Ubicación</th><th>Zona</th><th class="num">Precio</th><th class="num">USD/m²</th><th>Nota</th></tr></thead><tbody>
-      ${oport.map(p=>{ const dif=s.med&&+p.usd_m2? Math.round((+p.usd_m2/s.med-1)*100):null; return `<tr><td>${esc(p.direccion||'')}</td><td>${esc(zoneName(p.zona))}</td><td class="num">${p.precio_real?money(p.precio_real):money(p.precio_pub)}</td><td class="num"><b>${p.usd_m2||'s/d'}</b></td><td class="small">${dif!==null?(dif<0?`<b>${dif}%</b> bajo la mediana del segmento`:`${dif>0?'+':''}${dif}% vs. mediana`):''}${p.comentarios?` · ${esc(p.comentarios)}`:''}</td></tr>`; }).join('')}
-      </tbody></table>`:'<p class="small">Sin oportunidades marcadas. Etiquetá unidades como "Tomar acción" en Propiedades para que aparezcan acá.</p>'}
+    <h2>Oportunidades <span class="small" style="font-weight:400">— jerarquizadas por ganancia estimada</span></h2>
+    ${oport.length?`
+    <div class="box small"><b>Supuestos del modelo:</b> valor de salida = m² × mediana del segmento${pivot?` (US$ ${pivot.toLocaleString('es-UY')}/m²)`:''}; reforma estimada US$ ${INV.reformaUSDm2}/m² en unidades "a reciclar"; regularización US$ ${INV.regulariz.toLocaleString('es-UY')} en unidades sin planos. Cifras indicativas, no constituyen tasación.</div>
+    ${oport.map((o,i)=>{ const p=o.p; const razones=[];
+      if(o.difMed!=null&&o.difMed<0) razones.push(`entra <b>${Math.abs(o.difMed)}% por debajo de la mediana</b> del segmento — margen de compra`);
+      if(o.esReciclar) razones.push('unidad <b>a reciclar</b>: la reforma la lleva a valor de obra terminada');
+      if(o.esRegular) razones.push('<b>a regularizar</b> (sin planos): costo acotado que desbloquea financiación y reventa');
+      const drv=topDrivers(p.zona); if(drv) razones.push(`drivers de zona: ${drv}`);
+      if(!razones.length&&p.gestion==='Tomar acción') razones.push('marcada para tomar acción por el analista');
+      if(!razones.length) razones.push('valor por debajo del promedio del segmento');
+      const hor=(o.esReciclar||o.esRegular)?'12–18 meses (obra + reventa)':'6–12 meses (reposicionamiento / reventa)';
+      const invDetalle=`${money(o.price)}${o.reforma?` + reforma ${money(o.reforma)}`:''}${o.regular?` + regulariz. ${money(o.regular)}`:''}`;
+      return `<div class="op"><div class="ophd"><span class="rank">#${i+1}</span> <b>${esc(p.direccion||'s/d')}</b> · ${esc(zoneName(p.zona))} · ${esc(p.tipologia||'')}${p.usd_m2?` · US$ ${p.usd_m2}/m²`:''}</div>
+      <p class="small" style="margin:5px 0">${razones.join('; ')}.${p.comentarios?` <i>${esc(p.comentarios)}</i>`:''}</p>
+      <table class="opnum"><tbody>
+        <tr><td>Inversión total estimada</td><td class="num"><b>${money(o.invTotal)}</b> <span class="small">(${invDetalle})</span></td></tr>
+        <tr><td>Valor de salida estimado ${o.m2?`(${o.m2} m² × mediana)`:''}</td><td class="num">${o.valorSalida?money(o.valorSalida):'s/d'}</td></tr>
+        <tr><td>Ganancia estimada al culminar</td><td class="num"><b style="color:${o.ganancia!=null&&o.ganancia>0?'#1F3864':'#b03030'}">${o.ganancia!=null?money(o.ganancia):'s/d'}</b>${o.roi!=null?` · ROI ${o.roi}%`:''}</td></tr>
+        <tr><td>Horizonte</td><td class="num small">${hor}</td></tr>
+      </tbody></table></div>`; }).join('')}
+    `:'<p class="small">Sin oportunidades en el segmento. Etiquetá unidades como "Tomar acción" en Propiedades o ampliá la base.</p>'}
     <div class="foot">Informe generado desde el CRM Crespo Real State el ${hoy}. Análisis de comparables de mercado (ACM); no constituye tasación. Valores en USD. Descuentos aplicados solo con fecha de aviso visible. Fuente de la serie histórica: ver detalle por punto en la pestaña Histórico del CRM.</div>
   </div></body></html>`;
   const w=window.open('','_blank'); if(!w){ alert('El navegador bloqueó la ventana emergente. Permití pop-ups para generar el informe.'); return; }
