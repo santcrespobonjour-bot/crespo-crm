@@ -903,6 +903,8 @@ function generarInforme(){
   const hoy=hoyStr();
   const money=v=>v?('US$ '+(+v).toLocaleString('es-UY')):'s/d';
   const años=proyCfg.años;
+  /* nombre de la propiedad enlazado al aviso original (solo http/https; sin URL queda texto plano) */
+  const link=(p,txt)=>{ const u=(p.url||'').trim(); return /^https?:\/\//i.test(u)? `<a href="${esc(u)}" target="_blank" rel="noopener">${txt}</a>` : txt; };
   /* mediana por tipología: NO mezclar apto/casa/terreno (USD/m² incomparables).
      Se calcula sobre el crudo porque la mediana no se distorsiona con extremos. */
   const s0=statsUSD(sel);
@@ -986,6 +988,7 @@ function generarInforme(){
     table{border-collapse:collapse;width:100%;font-size:11px;margin:4px 0} th,td{border-bottom:1px solid #e8edf6;padding:5px 7px;text-align:left} th{background:#1F3864;color:#fff} td.num,th.num{text-align:right;white-space:nowrap}
     .kpis{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0} .kpi{flex:1 1 120px;border:1px solid #e3e9f4;border-left:4px solid #0F6FC6;border-radius:7px;padding:9px 12px} .kpi .v{font-size:20px;font-weight:800;color:#1F3864} .kpi .l{font-size:10px;color:#5b6472;text-transform:uppercase;letter-spacing:.3px}
     .small{font-size:10.5px;color:#5b6472} .box{background:#eef2f9;border-left:4px solid #1F3864;padding:8px 10px;border-radius:0 6px 6px 0;margin:8px 0}
+    a{color:#0F6FC6;text-decoration:none;border-bottom:1px dotted #8EAADB} a:hover{border-bottom-style:solid}
     .op{border:1px solid #e3e9f4;border-radius:8px;padding:10px 12px;margin:9px 0;break-inside:avoid} .ophd{color:#1F3864;font-size:12.5px} .rank{display:inline-block;background:#1F3864;color:#fff;font-weight:800;border-radius:5px;padding:1px 7px;margin-right:5px;font-size:11px} table.opnum{margin:6px 0 0} table.opnum td{border:0;border-bottom:1px solid #f0f3f9;padding:3px 6px} table.opnum td:first-child{color:#5b6472;width:44%}
     .foot{margin-top:26px;border-top:1px solid #e8edf6;padding-top:8px;color:#7a8494;font-size:10px}
     .no-print{margin:0 0 14px} button{background:#0F6FC6;color:#fff;border:0;padding:9px 16px;border-radius:6px;font-weight:700;cursor:pointer;font-size:13px}
@@ -1004,9 +1007,9 @@ function generarInforme(){
     </div>
     <p class="small">La <b>mediana manda</b>: es el valor central de la muestra y no se distorsiona con extremos. El promedio se incluye solo como contraste.</p>
     <h2>Comparables</h2>
-    <p class="small">Selección representativa: los <b>5 principales por encima de la mediana</b>${pivot?` (US$ ${pivot.toLocaleString('es-UY')}/m²)`:''} y los <b>4 más cercanos por debajo</b>. <b>No se incluyen mínimos ni máximos</b>: los extremos del portal casi siempre responden a metros cuadrados mal cargados, no a precios reales de mercado.${comps.length>compSel.length?` Se muestran ${compSel.length} de ${comps.length} comparables validados.`:''}</p>
+    <p class="small">Selección representativa: los <b>5 principales por encima de la mediana</b>${pivot?` (US$ ${pivot.toLocaleString('es-UY')}/m²)`:''} y los <b>4 más cercanos por debajo</b>. <b>No se incluyen mínimos ni máximos</b>: los extremos del portal casi siempre responden a metros cuadrados mal cargados, no a precios reales de mercado.${comps.length>compSel.length?` Se muestran ${compSel.length} de ${comps.length} comparables validados.`:''} El <b>nombre de cada propiedad enlaza al aviso original</b>.</p>
     <table><thead><tr><th>Ubicación</th><th>Zona</th><th>Tipología</th><th class="num">m²</th><th class="num">Precio</th><th class="num">USD/m²</th><th>Fecha aviso</th><th>Rol</th></tr></thead><tbody>
-    ${compSel.map(p=>`<tr><td>${esc(p.direccion||'')}</td><td>${esc(zoneName(p.zona))}</td><td>${esc(p.tipologia||'')}</td><td class="num">${p.m2||'s/d'}</td><td class="num">${p.precio_real?money(p.precio_real):money(p.precio_pub)}</td><td class="num"><b>${p.usd_m2||'s/d'}</b></td><td>${p.fecha_aviso||'s/d'}</td><td class="small">${compRol(p)}</td></tr>`).join('')}
+    ${compSel.map(p=>`<tr><td>${link(p,esc(p.direccion||'s/d'))}</td><td>${esc(zoneName(p.zona))}</td><td>${esc(p.tipologia||'')}</td><td class="num">${p.m2||'s/d'}</td><td class="num">${p.precio_real?money(p.precio_real):money(p.precio_pub)}</td><td class="num"><b>${p.usd_m2||'s/d'}</b></td><td>${p.fecha_aviso||'s/d'}</td><td class="small">${compRol(p)}</td></tr>`).join('')}
     </tbody></table>
     ${bloquesHist?`<h2>Histórico y proyección</h2>${bloquesHist}`:''}
     <h2>Factores de valorización (IV)</h2>
@@ -1023,7 +1026,7 @@ function generarInforme(){
       if(!razones.length) razones.push('valor por debajo del promedio del segmento');
       const hor=(o.esReciclar||o.esRegular)?'12–18 meses (obra + reventa)':'6–12 meses (reposicionamiento / reventa)';
       const invDetalle=`${money(o.price)}${o.reforma?` + reforma ${money(o.reforma)}`:''}${o.regular?` + regulariz. ${money(o.regular)}`:''}`;
-      return `<div class="op"><div class="ophd"><span class="rank">#${i+1}</span> <b>${esc(p.direccion||'s/d')}</b> · ${esc(zoneName(p.zona))} · ${esc(p.tipologia||'')}${p.usd_m2?` · US$ ${p.usd_m2}/m²`:''}</div>
+      return `<div class="op"><div class="ophd"><span class="rank">#${i+1}</span> <b>${link(p,esc(p.direccion||'s/d'))}</b> · ${esc(zoneName(p.zona))} · ${esc(p.tipologia||'')}${p.usd_m2?` · US$ ${p.usd_m2}/m²`:''}</div>
       <p class="small" style="margin:5px 0">${razones.join('; ')}.${p.comentarios?` <i>${esc(p.comentarios)}</i>`:''}</p>
       <table class="opnum"><tbody>
         <tr><td>Inversión total estimada</td><td class="num"><b>${money(o.invTotal)}</b> <span class="small">(${invDetalle})</span></td></tr>
