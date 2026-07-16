@@ -838,23 +838,33 @@ function generarInforme(){
   const compRol=p=>{ if(comps.length&&p.id===comps[0].id) return 'Piso (mín.)'; if(comps.length&&p.id===comps[comps.length-1].id) return 'Techo (máx.)'; return (+p.usd_m2>=pivot)?'Representativo':'Bajo mediana'; };
   /* -------- motor de oportunidades: jerarquizadas, con inversión y ganancia -------- */
   const INV={reformaUSDm2:350, regulariz:8000};
+  /* mediana por tipología dentro de la selección: NO mezclar apto/casa/terreno (USD/m² incomparables) */
+  const medByTipo={}; { const g={}; sel.forEach(p=>{ if(+p.usd_m2>0){ (g[p.tipologia]=g[p.tipologia]||[]).push(+p.usd_m2); } }); Object.keys(g).forEach(t=>{ medByTipo[t]=Math.round(median(g[t])); }); }
+  const refTipo=p=>medByTipo[p.tipologia]||pivot;
   const oportModelo=p=>{
-    const price=+(p.precio_real||p.precio_pub)||0, m2=+p.m2||0;
+    const price=+(p.precio_real||p.precio_pub)||0, m2=+p.m2||0, ref=refTipo(p);
     const com=((p.comentarios||'')+' '+(p.estado||'')+' '+(p.tipologia||'')).toLowerCase();
     const esReciclar=/recicl|refacc|reforma/.test(com);
     const esRegular=/regular|sin planos/.test(com);
     const reforma=esReciclar&&m2?Math.round(m2*INV.reformaUSDm2):0;
     const regular=esRegular?INV.regulariz:0;
     const invTotal=price+reforma+regular;
-    const valorSalida=(m2&&pivot)?Math.round(m2*pivot):0;
+    const valorSalida=(m2&&ref)?Math.round(m2*ref):0;
     const ganancia=(valorSalida&&invTotal)?valorSalida-invTotal:null;
     const roi=(ganancia!=null&&invTotal)?Math.round(ganancia/invTotal*100):null;
-    const difMed=(pivot&&+p.usd_m2)?Math.round((+p.usd_m2/pivot-1)*100):null;
-    return {p,price,m2,esReciclar,esRegular,reforma,regular,invTotal,valorSalida,ganancia,roi,difMed};
+    const difMed=(ref&&+p.usd_m2)?Math.round((+p.usd_m2/ref-1)*100):null;
+    return {p,price,m2,ref,esReciclar,esRegular,reforma,regular,invTotal,valorSalida,ganancia,roi,difMed};
   };
-  /* pool: marcadas "Tomar acción" + comparables por debajo de la mediana (subvaluados) */
-  const pool=sel.filter(p=>((+p.precio_real||+p.precio_pub)>0) && (p.gestion==='Tomar acción' || (+p.usd_m2>0 && +p.usd_m2<pivot)));
+  /* pool: subvaluadas frente a su propia tipología. Se excluyen outliers de dato dudoso
+     (USD/m² < 45% de la mediana de su tipología ⇒ m²/tipología casi siempre mal cargados). */
+  const pool=sel.filter(p=>{ const price=+p.precio_real||+p.precio_pub, u=+p.usd_m2, ref=refTipo(p);
+    if(!(price>0)||!(u>0)) return false;
+    if(ref && u<0.45*ref) return false;
+    if(p.gestion==='Tomar acción') return true;
+    return ref && u<ref;
+  });
   const oport=[...new Map(pool.map(p=>[p.id,p])).values()].map(oportModelo)
+     .filter(o=> (o.roi==null || o.roi<=250) && (o.ganancia==null || o.ganancia>0))   // solo ganancia positiva; descarta anomalías de dato
      .sort((a,b)=>{ const ga=a.ganancia==null?-1e12:a.ganancia, gb=b.ganancia==null?-1e12:b.ganancia; return gb-ga; })
      .slice(0,6);
   /* bloque histórico+proyección por zona */
@@ -916,9 +926,9 @@ function generarInforme(){
     <table><thead><tr><th>Zona</th><th>Depto</th><th class="num">USD/m² ref.</th><th class="num">IV</th><th>Principales drivers</th></tr></thead><tbody>${bloquesIV}</tbody></table>
     <h2>Oportunidades <span class="small" style="font-weight:400">— jerarquizadas por ganancia estimada</span></h2>
     ${oport.length?`
-    <div class="box small"><b>Supuestos del modelo:</b> valor de salida = m² × mediana del segmento${pivot?` (US$ ${pivot.toLocaleString('es-UY')}/m²)`:''}; reforma estimada US$ ${INV.reformaUSDm2}/m² en unidades "a reciclar"; regularización US$ ${INV.regulariz.toLocaleString('es-UY')} en unidades sin planos. Cifras indicativas, no constituyen tasación.</div>
+    <div class="box small"><b>Supuestos del modelo:</b> valor de salida = m² × <b>mediana de su misma tipología</b> en la selección (no se mezclan apto/casa/terreno); reforma estimada US$ ${INV.reformaUSDm2}/m² en unidades "a reciclar"; regularización US$ ${INV.regulariz.toLocaleString('es-UY')} en unidades sin planos. Se excluyen avisos con USD/m² implausible (dato mal cargado). Cifras indicativas, no constituyen tasación.</div>
     ${oport.map((o,i)=>{ const p=o.p; const razones=[];
-      if(o.difMed!=null&&o.difMed<0) razones.push(`entra <b>${Math.abs(o.difMed)}% por debajo de la mediana</b> del segmento — margen de compra`);
+      if(o.difMed!=null&&o.difMed<0) razones.push(`entra <b>${Math.abs(o.difMed)}% por debajo de la mediana</b> de su tipología (US$ ${o.ref?o.ref.toLocaleString('es-UY'):'s/d'}/m²) — margen de compra`);
       if(o.esReciclar) razones.push('unidad <b>a reciclar</b>: la reforma la lleva a valor de obra terminada');
       if(o.esRegular) razones.push('<b>a regularizar</b> (sin planos): costo acotado que desbloquea financiación y reventa');
       const drv=topDrivers(p.zona); if(drv) razones.push(`drivers de zona: ${drv}`);
@@ -930,7 +940,7 @@ function generarInforme(){
       <p class="small" style="margin:5px 0">${razones.join('; ')}.${p.comentarios?` <i>${esc(p.comentarios)}</i>`:''}</p>
       <table class="opnum"><tbody>
         <tr><td>Inversión total estimada</td><td class="num"><b>${money(o.invTotal)}</b> <span class="small">(${invDetalle})</span></td></tr>
-        <tr><td>Valor de salida estimado ${o.m2?`(${o.m2} m² × mediana)`:''}</td><td class="num">${o.valorSalida?money(o.valorSalida):'s/d'}</td></tr>
+        <tr><td>Valor de salida estimado ${o.m2&&o.ref?`(${o.m2} m² × US$ ${o.ref.toLocaleString('es-UY')}/m²)`:''}</td><td class="num">${o.valorSalida?money(o.valorSalida):'s/d'}</td></tr>
         <tr><td>Ganancia estimada al culminar</td><td class="num"><b style="color:${o.ganancia!=null&&o.ganancia>0?'#1F3864':'#b03030'}">${o.ganancia!=null?money(o.ganancia):'s/d'}</b>${o.roi!=null?` · ROI ${o.roi}%`:''}</td></tr>
         <tr><td>Horizonte</td><td class="num small">${hor}</td></tr>
       </tbody></table></div>`; }).join('')}
