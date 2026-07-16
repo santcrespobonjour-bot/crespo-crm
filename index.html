@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'unsafe-inline' https://unpkg.com https://cdn.jsdelivr.net; style-src 'unsafe-inline' https://unpkg.com; img-src 'self' data: https://*.tile.openstreetmap.org https://unpkg.com; connect-src https://*.supabase.co https://nominatim.openstreetmap.org; object-src 'none'; base-uri 'none'">
 <title>CRM · Crespo Real State</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
   integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
@@ -104,7 +105,8 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
   integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.110.6/dist/umd/supabase.min.js"
+  integrity="sha384-GyhLKJoRcMXYwIJUTyx0/uSPYliVPdRYYXJm3G6zyMjKShNs8jLM7WaLpk8Vr4W/" crossorigin="anonymous"></script>
 <script>
 /* ============================================================================
    MODELO DE DATOS — listo para migrar a Supabase (PostgreSQL)
@@ -288,7 +290,7 @@ function msBox(id,ph,opts,sel,pick,rerender,width){
     <button class="ms-btn ${sel.length?'on':''}" title="${esc(sel.length?msLabel(ph,opts,sel):ph)}" onclick="msOpen('${id}','${rerender}')">${esc(msLabel(ph,opts,sel))}</button>
     ${open? `<div class="ms-menu">
       <label class="all"><input type="checkbox" ${sel.length?'':'checked'} onchange="${pick}('')"> ${esc(ph)}</label>
-      ${opts.map(o=>`<label><input type="checkbox" ${sel.includes(o.v)?'checked':''} onchange="${pick}('${esc(o.v).replace(/'/g,"\\'")}')"> ${esc(o.l)}</label>`).join('')}
+      ${opts.map(o=>`<label><input type="checkbox" ${sel.includes(o.v)?'checked':''} onchange="${pick}(decodeURIComponent('${jsq(o.v)}'))"> ${esc(o.l)}</label>`).join('')}
     </div>` : ''}
   </div>`;
 }
@@ -304,6 +306,11 @@ document.addEventListener('click',e=>{
 /* -------------------- FICHA de propiedad (contacto + historial de acciones) -------------------- */
 let fichaId=null;
 function esc(s){ return (s==null?'':(''+s)).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+/* solo http/https: bloquea javascript: y similares en hrefs armados con datos del portal */
+function safeUrl(u){ u=(''+(u||'')).trim(); return /^https?:\/\//i.test(u)? u : ''; }
+function linkUrl(u,txt){ const s=safeUrl(u); return s? `<a href="${esc(s)}" target="_blank" rel="noopener">${txt}</a>` : ''; }
+/* valor seguro para incrustar en un handler inline: los receptores hacen decodeURIComponent */
+function jsq(v){ return encodeURIComponent(''+(v==null?'':v)).replace(/'/g,'%27'); }
 function hoyStr(){ return new Date().toISOString().slice(0,10); }
 function openFicha(id){ const p=DB.propiedades.find(x=>x.id===id); if(!p)return; if(!p.contacto) p.contacto={nombre:'',telefono:'',email:'',inmobiliaria:''}; if(!Array.isArray(p.acciones)) p.acciones=[]; p._notasLoaded=false; fichaId=id; renderFicha(); document.getElementById('ficha').showModal(); if(sbUser) loadNotas(id); }
 function renderFicha(){
@@ -316,7 +323,7 @@ function renderFicha(){
   const cargando = live && !p._notasLoaded;
   document.getElementById('ficha-h').textContent='Ficha · '+p.direccion+' ('+zoneName(p.zona)+')';
   document.getElementById('ficha-b').innerHTML=`
-    <div class="small muted" style="margin-bottom:4px">En el CRM desde <b style="color:${antigColor(p)}">${p.fecha_alta||'s/d'}</b> · <b style="color:${antigColor(p)}">${diasTxt(p)}</b>${antigBucket(p)==='nuevas'?' <span class="pill" style="background:#0F6FC6">NUEVA</span>':''}${p.fecha_aviso?` <span class="muted">· aviso publicado ${p.fecha_aviso}</span>`:''}</div>
+    <div class="small muted" style="margin-bottom:4px">En el CRM desde <b style="color:${antigColor(p)}">${esc(p.fecha_alta||'s/d')}</b> · <b style="color:${antigColor(p)}">${diasTxt(p)}</b>${antigBucket(p)==='nuevas'?' <span class="pill" style="background:#0F6FC6">NUEVA</span>':''}${p.fecha_aviso?` <span class="muted">· aviso publicado ${esc(p.fecha_aviso)}</span>`:''}</div>
     <h4>Datos de contacto</h4>
     <div class="grid">
       <div><label>Nombre / referente</label><input id="c_nombre" value="${esc(c.nombre)}"></div>
@@ -337,11 +344,11 @@ function renderFicha(){
       <div><label>Responsable</label><select id="c_resp">${respOpts(p.responsable||'')}</select></div>
       <div><label>Estado</label><select id="c_estado" style="font-weight:700;color:${estadoTareaColor(tareaEstado(p))}">${estadoTareaOpts(p.estado_tarea||'')}</select></div>
       <div><label>Fecha de seguimiento</label><input id="c_fseg" type="date" value="${p.fecha_seguimiento||''}"></div>
-      <div><label>Aviso</label>${p.url?`<div style="padding-top:7px"><a href="${p.url}" target="_blank">Abrir aviso ↗</a></div>`:'<div class="small muted" style="padding-top:8px">—</div>'}</div>
+      <div><label>Aviso</label>${safeUrl(p.url)?`<div style="padding-top:7px">${linkUrl(p.url,'Abrir aviso ↗')}</div>`:'<div class="small muted" style="padding-top:8px">—</div>'}</div>
     </div>
     <h4>Notas y acciones de los analistas (${hist.length})${live?' <span class="pill" style="background:#0F6FC6">en vivo</span>':' <span class="pill" style="background:#8892a0">local</span>'}</h4>
     <div style="max-height:190px;overflow:auto;border:1px solid var(--border-soft);border-radius:6px;padding:4px 6px;background:var(--surface-2)">
-      ${cargando? '<p class="small muted" style="margin:6px 2px">Cargando notas…</p>' : (hist.length? hist.map(a=>`<div style="display:flex;gap:8px;align-items:center;padding:5px 0;border-bottom:1px solid #eef2f9"><span class="pill" style="background:#2E5496;white-space:nowrap">${a.fecha||'s/f'}</span>${a.autor?`<span class="pill" style="background:#1F3864;white-space:nowrap">${esc(a.autor)}</span>`:'<span class="pill" style="background:#8892a0;white-space:nowrap">s/firma</span>'}<span style="flex:1">${esc(a.texto)}</span><button class="act ghost mini" type="button" onclick="${a.id!==undefined?`delNota(${a.id})`:`delAccion('${a.fecha}','${encodeURIComponent(a.texto)}')`}">✕</button></div>`).join('') : '<p class="small muted" style="margin:6px 2px">Sin notas todavía. Registrá la primera abajo.</p>')}
+      ${cargando? '<p class="small muted" style="margin:6px 2px">Cargando notas…</p>' : (hist.length? hist.map(a=>`<div style="display:flex;gap:8px;align-items:center;padding:5px 0;border-bottom:1px solid #eef2f9"><span class="pill" style="background:#2E5496;white-space:nowrap">${esc(a.fecha||'s/f')}</span>${a.autor?`<span class="pill" style="background:#1F3864;white-space:nowrap">${esc(a.autor)}</span>`:'<span class="pill" style="background:#8892a0;white-space:nowrap">s/firma</span>'}<span style="flex:1">${esc(a.texto)}</span><button class="act ghost mini" type="button" onclick="${a.id!==undefined?`delNota(${+a.id})`:`delAccion('${jsq(a.fecha)}','${jsq(a.texto)}')`}">✕</button></div>`).join('') : '<p class="small muted" style="margin:6px 2px">Sin notas todavía. Registrá la primera abajo.</p>')}
     </div>
     <div class="toolbar" style="margin-top:8px">
       ${live?'':`<input type="date" id="na_fecha" value="${hoyStr()}" style="max-width:150px">`}
@@ -356,7 +363,7 @@ function addAccion(){ const p=DB.propiedades.find(x=>x.id===fichaId); const t=(v
   syncFichaInputs();
   if(sbUser){ logAccion(p,t); return; }
   p.acciones.push({fecha:val('na_fecha')||hoyStr(),texto:t,autor:currentAnalyst()}); save(); renderFicha(); }
-function delAccion(fecha,encTexto){ const p=DB.propiedades.find(x=>x.id===fichaId); const t=decodeURIComponent(encTexto); const i=p.acciones.findIndex(a=>a.fecha===fecha&&a.texto===t); if(i>=0){ p.acciones.splice(i,1); save(); renderFicha(); } }
+function delAccion(encFecha,encTexto){ const p=DB.propiedades.find(x=>x.id===fichaId); const f=decodeURIComponent(encFecha), t=decodeURIComponent(encTexto); const i=p.acciones.findIndex(a=>a.fecha===f&&a.texto===t); if(i>=0){ p.acciones.splice(i,1); save(); renderFicha(); } }
 function closeFicha(saveIt){ if(saveIt){ syncFichaInputs(); save(); } document.getElementById('ficha').close(); if(document.getElementById('v-propiedades').classList.contains('active')) renderProps(); if(document.getElementById('v-dashboard').classList.contains('active')) renderDashboard(); if(document.getElementById('v-tareas').classList.contains('active')) renderTareas(); }
 
 /* -------------------- TAREAS (pestaña) -------------------- */
@@ -387,7 +394,7 @@ function renderTareas(){
       <td>${esc(p.proxima_accion||'')}</td>
       <td><select onchange="setTarea('${p.id}','responsable',this.value)" style="min-width:118px">${respOpts(p.responsable||'')}</select></td>
       <td><select onchange="setTarea('${p.id}','estado_tarea',this.value)" style="min-width:118px;font-weight:700;color:${estadoTareaColor(s)}">${estadoTareaOpts(p.estado_tarea||'')}</select></td>
-      <td>${p.fecha_seguimiento?`<span class="pill" style="background:${vc?'#1F3864':'#0F6FC6'}">${p.fecha_seguimiento}${vc?' · vencida':''}</span>`:'<span class="small muted">s/d</span>'}</td>
+      <td>${p.fecha_seguimiento?`<span class="pill" style="background:${vc?'#1F3864':'#0F6FC6'}">${esc(p.fecha_seguimiento)}${vc?' · vencida':''}</span>`:'<span class="small muted">s/d</span>'}</td>
     </tr>`; }).join('');
   cont.innerHTML=`<h2>Tareas</h2>
     <div class="panel">
@@ -507,8 +514,8 @@ function renderDashboard(){
     <div class="panel">
       <h3 style="margin-top:0">USD/m² por zona × tipología <span class="small muted">· clic en una fila para filtrar el panel</span></h3>
       <div style="overflow:auto"><table><thead><tr><th>Zona</th><th>Tipología</th><th class="num">n</th><th class="num">Mediana</th><th class="num">Promedio</th><th class="num">Mín</th><th class="num">Máx</th><th>Muestra</th></tr></thead><tbody>
-      ${segmentos.length? segmentos.map(g=>{ const act=(!fz.length||fz.includes(g.zona))&&(!ft.length||ft.includes(g.tip))&&filtrado; return `<tr style="cursor:pointer;${act?'background:var(--hover)':''}" onclick="dashSeg('${g.zona}','${esc(g.tip||'').replace(/'/g,"\\'")}')">
-        <td><b>${zoneName(g.zona)}</b></td><td>${g.tip||'s/d'}</td>
+      ${segmentos.length? segmentos.map(g=>{ const act=(!fz.length||fz.includes(g.zona))&&(!ft.length||ft.includes(g.tip))&&filtrado; return `<tr style="cursor:pointer;${act?'background:var(--hover)':''}" onclick="dashSeg(decodeURIComponent('${jsq(g.zona)}'),decodeURIComponent('${jsq(g.tip||'')}'))">
+        <td><b>${esc(zoneName(g.zona))}</b></td><td>${esc(g.tip||'s/d')}</td>
         <td class="num">${g.n}</td>
         <td class="num"><b>${g.nv?g.med.toLocaleString('es-UY'):'s/d'}</b></td>
         <td class="num">${g.nv?g.avg.toLocaleString('es-UY'):'s/d'}</td>
@@ -537,14 +544,14 @@ function renderDashboard(){
     <div class="panel">
       <h3 style="margin-top:0">Próximos seguimientos${segFollow.length?` <span class="small muted">(${segFollow.length})</span>`:''}</h3>
       ${segFollow.length? `<table><thead><tr><th>Propiedad</th><th>Zona</th><th>Próxima acción</th><th>Fecha</th><th>Estado</th></tr></thead><tbody>
-        ${segFollow.map(p=>{ const vencida=p.fecha_seguimiento<hoy; return `<tr style="cursor:pointer" onclick="editProp('${p.id}')"><td><b>${p.direccion}</b></td><td>${zoneName(p.zona)}</td><td>${p.proxima_accion||'—'}</td><td>${p.fecha_seguimiento}</td><td><span class="pill" style="background:${vencida?'#1F3864':'#0F6FC6'}">${vencida?'vencida':'próxima'}</span></td></tr>`; }).join('')}
+        ${segFollow.map(p=>{ const vencida=p.fecha_seguimiento<hoy; return `<tr style="cursor:pointer" onclick="editProp('${p.id}')"><td><b>${esc(p.direccion)}</b></td><td>${esc(zoneName(p.zona))}</td><td>${esc(p.proxima_accion||'—')}</td><td>${esc(p.fecha_seguimiento)}</td><td><span class="pill" style="background:${vencida?'#1F3864':'#0F6FC6'}">${vencida?'vencida':'próxima'}</span></td></tr>`; }).join('')}
         </tbody></table>` : `<p class="small muted">Sin seguimientos programados${filtrado?' en este segmento':''}. Cargá una <b>fecha de seguimiento</b> y una <b>próxima acción</b> en la pestaña Propiedades (o clic en una propiedad para editarla).</p>`}
     </div>
     <div class="panel">
       <h3 style="margin-top:0">Zonas por Índice de Valorización (IV)</h3>
       <table><thead><tr><th>Zona</th><th>Departamento</th><th>Tipología</th><th class="num">USD/m² ref.</th><th style="width:230px">IV</th></tr></thead><tbody>
-      ${zorder.map(({z,iv})=>`<tr style="cursor:pointer" onclick="dashAddZona('${z.id}')">
-        <td><b>${z.nombre}</b></td><td>${z.departamento}</td><td>${z.tipologia}</td>
+      ${zorder.map(({z,iv})=>`<tr style="cursor:pointer" onclick="dashAddZona(decodeURIComponent('${jsq(z.id)}'))">
+        <td><b>${esc(z.nombre)}</b></td><td>${esc(z.departamento)}</td><td>${esc(z.tipologia)}</td>
         <td class="num">${(+z.usd_m2_ref).toLocaleString('es-UY')}</td>
         <td><div style="display:flex;align-items:center;gap:8px"><div class="iv-bar" style="flex:1"><span style="width:${iv}%;background:${ivColor(iv)}"></span></div><b style="color:${ivColor(iv)};min-width:66px">${iv} · ${ivLabel(iv)}</b></div></td>
       </tr>`).join('')}
@@ -568,7 +575,7 @@ function renderZonas(){
     <h2>Zonas <button class="act" style="float:right" onclick="editZona()">+ Nueva zona</button></h2>
     <div class="panel"><table><thead><tr><th>Zona</th><th>Depto</th><th>Localidad</th><th>Tipología</th><th class="num">USD/m² ref.</th><th class="num">IV</th><th class="num">Props</th><th></th></tr></thead><tbody>
     ${DB.zonas.map(z=>{ const iv=calcIV(DB.valorizacion[z.id]); const np=DB.propiedades.filter(p=>p.zona===z.id).length; return `<tr>
-      <td><b>${z.nombre}</b></td><td>${z.departamento}</td><td>${z.localidad||''}</td><td>${z.tipologia}</td>
+      <td><b>${esc(z.nombre)}</b></td><td>${esc(z.departamento)}</td><td>${esc(z.localidad||'')}</td><td>${esc(z.tipologia)}</td>
       <td class="num">${(+z.usd_m2_ref).toLocaleString('es-UY')}</td>
       <td class="num"><span class="pill" style="background:${ivColor(iv)}">${iv}</span></td>
       <td class="num">${np}</td>
@@ -579,15 +586,15 @@ function editZona(id){
   const z = id? DB.zonas.find(z=>z.id===id) : {id:'z'+Date.now(),nombre:'',departamento:'',localidad:'',tipologia:'',usd_m2_ref:0,lat:-34.9,lon:-55.0,perfil:'',notas:''};
   openDlg(id?'Editar zona':'Nueva zona', `
     <div class="grid">
-      <div style="grid-column:1/-1"><label>Nombre</label><input id="f_nombre" value="${z.nombre}"></div>
-      <div><label>Departamento</label><input id="f_departamento" value="${z.departamento}"></div>
-      <div><label>Localidad</label><input id="f_localidad" value="${z.localidad||''}"></div>
-      <div><label>Tipología dominante</label><input id="f_tipologia" value="${z.tipologia}"></div>
+      <div style="grid-column:1/-1"><label>Nombre</label><input id="f_nombre" value="${esc(z.nombre)}"></div>
+      <div><label>Departamento</label><input id="f_departamento" value="${esc(z.departamento)}"></div>
+      <div><label>Localidad</label><input id="f_localidad" value="${esc(z.localidad||'')}"></div>
+      <div><label>Tipología dominante</label><input id="f_tipologia" value="${esc(z.tipologia)}"></div>
       <div><label>USD/m² referencia</label><input id="f_usd" type="number" value="${z.usd_m2_ref}"></div>
       <div><label>Lat</label><input id="f_lat" type="number" step="0.0001" value="${z.lat}"></div>
       <div><label>Lon</label><input id="f_lon" type="number" step="0.0001" value="${z.lon}"></div>
-      <div style="grid-column:1/-1"><label>Perfil</label><input id="f_perfil" value="${z.perfil||''}"></div>
-      <div style="grid-column:1/-1"><label>Notas</label><textarea id="f_notas" rows="2">${z.notas||''}</textarea></div>
+      <div style="grid-column:1/-1"><label>Perfil</label><input id="f_perfil" value="${esc(z.perfil||'')}"></div>
+      <div style="grid-column:1/-1"><label>Notas</label><textarea id="f_notas" rows="2">${esc(z.notas||'')}</textarea></div>
     </div>`, ()=>{
       z.nombre=val('f_nombre'); z.departamento=val('f_departamento'); z.localidad=val('f_localidad');
       z.tipologia=val('f_tipologia'); z.usd_m2_ref=+val('f_usd'); z.lat=+val('f_lat'); z.lon=+val('f_lon');
@@ -630,18 +637,18 @@ function renderProps(){
         ${[['direccion','Ubicación'],['zona','Zona'],['tipologia','Tipología'],['m2','m²'],['precio_pub','Precio pub.'],['descuento','Desc.'],['precio_real','Precio real'],['usd_m2','USD/m²'],['fecha_aviso','Fecha aviso'],['estado','Estado']].map(([k,l])=>`<th onclick="sortProp('${k}')">${l}</th>`).join('')}<th>Comentarios</th><th>Gestión</th><th>Seguimiento</th><th>Aviso</th><th></th>
       </tr></thead><tbody>
       ${list.map(p=>`<tr>
-        <td>${p.direccion}</td><td>${zoneName(p.zona)}</td><td>${p.tipologia}</td>
-        <td class="num">${p.m2||'s/d'}</td>
+        <td>${esc(p.direccion)}</td><td>${esc(zoneName(p.zona))}</td><td>${esc(p.tipologia)}</td>
+        <td class="num">${esc(p.m2||'s/d')}</td>
         <td class="num">${money(p.precio_pub)}</td>
-        <td class="num">${(p.descuento!==''&&p.descuento!==undefined&&p.descuento!==null)?('−'+p.descuento+'%'):'s/d'}</td>
+        <td class="num">${(p.descuento!==''&&p.descuento!==undefined&&p.descuento!==null)?('−'+esc(p.descuento)+'%'):'s/d'}</td>
         <td class="num">${p.precio_real?money(p.precio_real):'s/d'}</td>
-        <td class="num"><b>${p.usd_m2||'s/d'}</b></td>
-        <td>${p.fecha_aviso||'s/d'}</td>
-        <td>${p.estado||''}</td>
-        <td><input style="min-width:160px" value="${(p.comentarios||'').replace(/"/g,'&quot;')}" placeholder="ej: con garaje, esquina…" onchange="setCampo('${p.id}','comentarios',this.value)"></td>
+        <td class="num"><b>${esc(p.usd_m2||'s/d')}</b></td>
+        <td>${esc(p.fecha_aviso||'s/d')}</td>
+        <td>${esc(p.estado||'')}</td>
+        <td><input style="min-width:160px" value="${esc(p.comentarios||'')}" placeholder="ej: con garaje, esquina…" onchange="setCampo('${p.id}','comentarios',this.value)"></td>
         <td><select style="min-width:140px;border-color:${gColor(p.gestion)};color:${gColor(p.gestion)};font-weight:700" onchange="setCampo('${p.id}','gestion',this.value)">${gestOpts(p)}</select></td>
         <td><button class="act ghost mini" style="min-width:150px;max-width:200px;text-align:left;white-space:normal" onclick="openFicha('${p.id}')">🗂 ${p.proxima_accion? esc(p.proxima_accion).slice(0,28) : 'Ficha / acciones'}${(p.acciones&&p.acciones.length)?` · ${p.acciones.length}✓`:''}</button>${p.fecha_seguimiento?`<div class="small muted" style="margin-top:3px">📅 ${p.fecha_seguimiento}</div>`:''}</td>
-        <td>${p.url?`<a href="${p.url}" target="_blank">ver</a>`:''}</td>
+        <td>${linkUrl(p.url,'ver')}</td>
         <td><button class="act ghost mini" onclick="editProp('${p.id}')">✎</button></td></tr>`).join('')}
       </tbody></table></div>
     </div>`;
@@ -651,22 +658,22 @@ function editProp(id){
   const p = id? DB.propiedades.find(p=>p.id===id) : {id:'P'+Date.now(),zona:(DB.zonas[0]&&DB.zonas[0].id)||'',tipologia:'',direccion:'',m2:'',precio_pub:'',descuento:'',precio_real:'',usd_m2:'',fecha_aviso:'',estado:'',portal:'InfoCasas',url:'',comentarios:'',gestion:'Sin clasificar',proxima_accion:'',fecha_seguimiento:'',fecha_alta:hoyStr()};
   openDlg(id?'Editar propiedad':'Nueva propiedad', `
     <div class="grid">
-      <div><label>Zona</label><select id="f_zona">${DB.zonas.map(z=>`<option value="${z.id}" ${p.zona===z.id?'selected':''}>${z.nombre}</option>`).join('')}</select></div>
-      <div><label>Tipología</label><input id="f_tip" value="${p.tipologia}"></div>
-      <div style="grid-column:1/-1"><label>Ubicación / dirección</label><input id="f_dir" value="${p.direccion}"></div>
-      <div><label>m²</label><input id="f_m2" value="${p.m2}"></div>
-      <div><label>Precio publicado (USD)</label><input id="f_pub" type="number" value="${p.precio_pub}"></div>
-      <div><label>Descuento %</label><input id="f_desc" value="${p.descuento}"></div>
-      <div><label>Precio real (USD)</label><input id="f_real" type="number" value="${p.precio_real}"></div>
-      <div><label>USD/m²</label><input id="f_usd" value="${p.usd_m2}"></div>
-      <div><label>Fecha aviso</label><input id="f_fecha" type="date" value="${p.fecha_aviso}"></div>
-      <div><label>Alta en CRM (no es la fecha del aviso)</label><input id="f_falta" type="date" value="${p.fecha_alta||''}"></div>
-      <div><label>Estado edilicio / ubicación</label><input id="f_estado" value="${p.estado}"></div>
+      <div><label>Zona</label><select id="f_zona">${DB.zonas.map(z=>`<option value="${esc(z.id)}" ${p.zona===z.id?'selected':''}>${esc(z.nombre)}</option>`).join('')}</select></div>
+      <div><label>Tipología</label><input id="f_tip" value="${esc(p.tipologia)}"></div>
+      <div style="grid-column:1/-1"><label>Ubicación / dirección</label><input id="f_dir" value="${esc(p.direccion)}"></div>
+      <div><label>m²</label><input id="f_m2" value="${esc(p.m2)}"></div>
+      <div><label>Precio publicado (USD)</label><input id="f_pub" type="number" value="${esc(p.precio_pub)}"></div>
+      <div><label>Descuento %</label><input id="f_desc" value="${esc(p.descuento)}"></div>
+      <div><label>Precio real (USD)</label><input id="f_real" type="number" value="${esc(p.precio_real)}"></div>
+      <div><label>USD/m²</label><input id="f_usd" value="${esc(p.usd_m2)}"></div>
+      <div><label>Fecha aviso</label><input id="f_fecha" type="date" value="${esc(p.fecha_aviso)}"></div>
+      <div><label>Alta en CRM (no es la fecha del aviso)</label><input id="f_falta" type="date" value="${esc(p.fecha_alta||'')}"></div>
+      <div><label>Estado edilicio / ubicación</label><input id="f_estado" value="${esc(p.estado)}"></div>
       <div><label>Gestión</label><select id="f_gestion">${GESTION.map(g=>`<option ${p.gestion===g.v?'selected':''}>${g.v}</option>`).join('')}</select></div>
-      <div><label>Próxima acción</label><input id="f_pacc" value="${(p.proxima_accion||'').replace(/"/g,'&quot;')}" placeholder="ej: llamar inmobiliaria, visitar"></div>
-      <div><label>Fecha de seguimiento</label><input id="f_fseg" type="date" value="${p.fecha_seguimiento||''}"></div>
-      <div style="grid-column:1/-1"><label>Comentarios (garaje, esquina/medial, extras, contacto…)</label><textarea id="f_com" rows="2">${p.comentarios||''}</textarea></div>
-      <div style="grid-column:1/-1"><label>URL del aviso</label><input id="f_url" value="${p.url}"></div>
+      <div><label>Próxima acción</label><input id="f_pacc" value="${esc(p.proxima_accion||'')}" placeholder="ej: llamar inmobiliaria, visitar"></div>
+      <div><label>Fecha de seguimiento</label><input id="f_fseg" type="date" value="${esc(p.fecha_seguimiento||'')}"></div>
+      <div style="grid-column:1/-1"><label>Comentarios (garaje, esquina/medial, extras, contacto…)</label><textarea id="f_com" rows="2">${esc(p.comentarios||'')}</textarea></div>
+      <div style="grid-column:1/-1"><label>URL del aviso</label><input id="f_url" value="${esc(p.url)}"></div>
     </div>
     <p class="small muted">Si cargás precio publicado + descuento %, se recalcula precio real y USD/m² (podés sobrescribir el precio real a mano).</p>`, ()=>{
       p.zona=val('f_zona'); p.tipologia=val('f_tip'); p.direccion=val('f_dir'); p.m2=val('f_m2');
@@ -701,12 +708,14 @@ function renderValor(){
       ${FACTORES.map(f=>{ const s=sc[f.k]||0; return `<div class="factor-row">
         <div><b>${f.n}</b> <span class="small muted">(peso ${f.w}%)</span></div>
         <div style="text-align:center;font-weight:700;color:${ivColor(iv)}">${s}</div>
-        <input type="range" min="0" max="5" value="${s}" oninput="setScore('${f.k}',this.value)">
+        <input type="range" min="0" max="5" value="${s}" oninput="previewScore(this,'${f.k}',this.value)" onchange="setScore('${f.k}',this.value)">
         <div class="small muted">${(f.w*s/5).toFixed(1)} pts</div>
       </div>`;}).join('')}
       <p class="small muted" style="margin-top:12px">Fórmula: IV = Σ(peso × score/5). Editá los deslizadores; se guarda automáticamente. Marco completo en <code>docs/factores-valorizacion.md</code>.</p>
     </div>`;
 }
+/* mientras se arrastra: solo actualiza los números de la fila (re-armar el DOM con innerHTML cortaba el arrastre); al soltar, setScore guarda y repinta todo */
+function previewScore(el,k,v){ const f=FACTORES.find(x=>x.k===k); const row=el.parentNode; if(row&&row.children[1]) row.children[1].textContent=v; if(f&&row&&row.children[3]) row.children[3].textContent=(f.w*v/5).toFixed(1)+' pts'; }
 function setScore(k,v){ if(!DB.valorizacion[valZona]) DB.valorizacion[valZona]={}; DB.valorizacion[valZona][k]=+v; save(); const z=DB.zonas.find(z=>z.id===valZona); if(z){ clearTimeout(window._tz); window._tz=setTimeout(function(){ liveUpsertZona(z); },800); } renderValor(); }
 
 /* -------------------- HISTÓRICO -------------------- */
@@ -851,7 +860,7 @@ function renderHistorico(){
     const zserie=DB.historico.filter(h=>h.zona===g.zona).sort((a,b)=>a.anio-b.anio);
     const cg=cagr(zserie), estim=zserie.filter(h=>/estim/i.test(h.fuente||'')).length;
     html+=`<div class="panel">
-      <h3 style="margin-top:0">${zoneName(g.zona)} · ${g.tipo} <span class="pill" style="background:${n<10?'#8892a0':'#0F6FC6'};margin-left:6px">${n} prospecto${n===1?'':'s'}</span></h3>
+      <h3 style="margin-top:0">${esc(zoneName(g.zona))} · ${esc(g.tipo)} <span class="pill" style="background:${n<10?'#8892a0':'#0F6FC6'};margin-left:6px">${n} prospecto${n===1?'':'s'}</span></h3>
       ${n&&n<10?`<div class="box" style="border-left:4px solid var(--azul-acero);background:var(--surface-2);border-radius:0 6px 6px 0;padding:8px 10px;margin:6px 0"><b>⚠ Muestra de ${n} (&lt; 10):</b> la muestra <b>no es del todo representativa</b>; los valores son indicativos y se robustecen al actualizar la base.</div>`:''}
       ${vals.length?`<div class="small muted" style="margin:2px 0 4px">USD/m²: mín <b>${mn}</b> · mediana <b>${med}</b> · promedio <b>${avg}</b> · máx <b>${mx}</b></div>${barChartH(items)}`:''}
       ${zserie.length>1?`
@@ -866,9 +875,9 @@ function renderHistorico(){
           <td><input value="${esc(h.fuente||'')}" onchange="setHist(${i},'fuente',this.value)"></td>
           <td><button class="act ghost mini" onclick="delHist(${i})">✕</button></td></tr>`; }).join('')}
         </tbody></table>
-        <div class="toolbar" style="margin:8px 0 0"><button class="act ghost mini" onclick="addHist('${g.zona}','${esc(zserie[0].tipologia||g.tipo)}')">+ Agregar año</button>
+        <div class="toolbar" style="margin:8px 0 0"><button class="act ghost mini" onclick="addHist(decodeURIComponent('${jsq(g.zona)}'),decodeURIComponent('${jsq(zserie[0].tipologia||g.tipo)}'))">+ Agregar año</button>
         ${estim?`<span class="small muted">⚠ ${estim} de ${zserie.length} puntos son <b>estimación declarada</b> (no dato publicado). Reemplazalos cuando tengas la fuente.</span>`:''}</div>
-      ` : `<p class="small muted" style="margin-top:8px">Sin serie histórica cargada para esta zona. ${/Maldonado/.test((DB.zonas.find(z=>z.id===g.zona)||{}).departamento||'')?'Tocá <b>“Cargar serie 5 años de Maldonado”</b> arriba.':'Agregá puntos con el botón de abajo.'} <button class="act ghost mini" onclick="addHist('${g.zona}','${esc(g.tipo)}')">+ Agregar año</button></p>`}
+      ` : `<p class="small muted" style="margin-top:8px">Sin serie histórica cargada para esta zona. ${/Maldonado/.test((DB.zonas.find(z=>z.id===g.zona)||{}).departamento||'')?'Tocá <b>“Cargar serie 5 años de Maldonado”</b> arriba.':'Agregá puntos con el botón de abajo.'} <button class="act ghost mini" onclick="addHist(decodeURIComponent('${jsq(g.zona)}'),decodeURIComponent('${jsq(g.tipo)}'))">+ Agregar año</button></p>`}
       <p style="margin:10px 0 2px"><b>Qué muestra:</b> ${histNote(g.zona,g.tipo,{mn,med,mx,avg,n})}</p>
       <p style="margin:2px 0"><b>Variables que explican el cambio (top factores de valorización):</b> ${topDrivers(g.zona)||'s/d'}.</p>
     </div>`; });
@@ -970,7 +979,7 @@ function generarInforme(){
     let saltos='';
     if(maxUp&&maxUp.pct>0.05) saltos+=` El mayor salto interanual fue <b>${maxUp.de}→${maxUp.a}</b> (<b>+${maxUp.pct.toFixed(1)}%</b>${maxUp.punto.fuente?`, según ${esc(maxUp.punto.fuente)}`:''}).`;
     if(maxDn&&maxDn.pct<-0.05) saltos+=` La mayor corrección fue <b>${maxDn.de}→${maxDn.a}</b> (<b>${maxDn.pct.toFixed(1)}%</b>${maxDn.punto.fuente?`, ${esc(maxDn.punto.fuente)}`:''}).`;
-    return `<h3>${zoneName(zid)} — evolución ${first.anio}–${ultimo.anio} y proyección a ${ultimo.anio+años}</h3>
+    return `<h3>${esc(zoneName(zid))} — evolución ${first.anio}–${ultimo.anio} y proyección a ${ultimo.anio+años}</h3>
       ${lineChartProj(zserie,años)}
       <p class="small">${narr}${saltos}</p>
       <table><thead><tr><th>Año</th><th class="num">USD/m²</th><th class="num">Var. a/a</th><th>Fuente del dato</th></tr></thead><tbody>${filas}</tbody></table>
@@ -978,7 +987,7 @@ function generarInforme(){
       ${proyTabla(zserie,años)}`;
   }).filter(Boolean).join('');
   /* factores de valorización por zona */
-  const bloquesIV=zonasSel.map(zid=>{ const iv=calcIV(DB.valorizacion[zid]); return `<tr><td><b>${zoneName(zid)}</b></td><td>${(DB.zonas.find(z=>z.id===zid)||{}).departamento||''}</td><td class="num">${(+(DB.zonas.find(z=>z.id===zid)||{}).usd_m2_ref||0).toLocaleString('es-UY')}</td><td class="num"><b style="color:${ivColor(iv)}">${iv} · ${ivLabel(iv)}</b></td><td class="small">${topDrivers(zid)||'s/d'}</td></tr>`; }).join('');
+  const bloquesIV=zonasSel.map(zid=>{ const iv=calcIV(DB.valorizacion[zid]); return `<tr><td><b>${esc(zoneName(zid))}</b></td><td>${esc((DB.zonas.find(z=>z.id===zid)||{}).departamento||'')}</td><td class="num">${(+(DB.zonas.find(z=>z.id===zid)||{}).usd_m2_ref||0).toLocaleString('es-UY')}</td><td class="num"><b style="color:${ivColor(iv)}">${iv} · ${ivLabel(iv)}</b></td><td class="small">${topDrivers(zid)||'s/d'}</td></tr>`; }).join('');
   const chico = s.nv>0 && s.nv<10;
   const css=`
     *{box-sizing:border-box} body{font-family:"Segoe UI",Arial,sans-serif;color:#1a2230;margin:0;font-size:12px;line-height:1.5}
@@ -1009,7 +1018,7 @@ function generarInforme(){
     <h2>Comparables</h2>
     <p class="small">Selección representativa: los <b>5 principales por encima de la mediana</b>${pivot?` (US$ ${pivot.toLocaleString('es-UY')}/m²)`:''} y los <b>4 más cercanos por debajo</b>. <b>No se incluyen mínimos ni máximos</b>: los extremos del portal casi siempre responden a metros cuadrados mal cargados, no a precios reales de mercado.${comps.length>compSel.length?` Se muestran ${compSel.length} de ${comps.length} comparables validados.`:''} El <b>nombre de cada propiedad enlaza al aviso original</b>.</p>
     <table><thead><tr><th>Ubicación</th><th>Zona</th><th>Tipología</th><th class="num">m²</th><th class="num">Precio</th><th class="num">USD/m²</th><th>Fecha aviso</th><th>Rol</th></tr></thead><tbody>
-    ${compSel.map(p=>`<tr><td>${link(p,esc(p.direccion||'s/d'))}</td><td>${esc(zoneName(p.zona))}</td><td>${esc(p.tipologia||'')}</td><td class="num">${p.m2||'s/d'}</td><td class="num">${p.precio_real?money(p.precio_real):money(p.precio_pub)}</td><td class="num"><b>${p.usd_m2||'s/d'}</b></td><td>${p.fecha_aviso||'s/d'}</td><td class="small">${compRol(p)}</td></tr>`).join('')}
+    ${compSel.map(p=>`<tr><td>${link(p,esc(p.direccion||'s/d'))}</td><td>${esc(zoneName(p.zona))}</td><td>${esc(p.tipologia||'')}</td><td class="num">${esc(p.m2||'s/d')}</td><td class="num">${p.precio_real?money(p.precio_real):money(p.precio_pub)}</td><td class="num"><b>${esc(p.usd_m2||'s/d')}</b></td><td>${esc(p.fecha_aviso||'s/d')}</td><td class="small">${compRol(p)}</td></tr>`).join('')}
     </tbody></table>
     ${bloquesHist?`<h2>Histórico y proyección</h2>${bloquesHist}`:''}
     <h2>Factores de valorización (IV)</h2>
@@ -1026,7 +1035,7 @@ function generarInforme(){
       if(!razones.length) razones.push('valor por debajo del promedio del segmento');
       const hor=(o.esReciclar||o.esRegular)?'12–18 meses (obra + reventa)':'6–12 meses (reposicionamiento / reventa)';
       const invDetalle=`${money(o.price)}${o.reforma?` + reforma ${money(o.reforma)}`:''}${o.regular?` + regulariz. ${money(o.regular)}`:''}`;
-      return `<div class="op"><div class="ophd"><span class="rank">#${i+1}</span> <b>${link(p,esc(p.direccion||'s/d'))}</b> · ${esc(zoneName(p.zona))} · ${esc(p.tipologia||'')}${p.usd_m2?` · US$ ${p.usd_m2}/m²`:''}</div>
+      return `<div class="op"><div class="ophd"><span class="rank">#${i+1}</span> <b>${link(p,esc(p.direccion||'s/d'))}</b> · ${esc(zoneName(p.zona))} · ${esc(p.tipologia||'')}${p.usd_m2?` · US$ ${esc(p.usd_m2)}/m²`:''}</div>
       <p class="small" style="margin:5px 0">${razones.join('; ')}.${p.comentarios?` <i>${esc(p.comentarios)}</i>`:''}</p>
       <table class="opnum"><tbody>
         <tr><td>Inversión total estimada</td><td class="num"><b>${money(o.invTotal)}</b> <span class="small">(${invDetalle})</span></td></tr>
@@ -1069,7 +1078,7 @@ function renderMap(){
       .bindPopup(`<b>${esc(p.direccion||'(sin dirección)')}</b><br>${esc(zoneName(p.zona))} · ${esc(p.tipologia||'')}<br>
         ${p.m2?esc(p.m2)+' m² · ':''}USD/m²: <b>${p.usd_m2||'s/d'}</b><br>
         Precio: ${p.precio_real?money(p.precio_real):money(p.precio_pub)}<br>
-        ${p.url?`<a href="${p.url}" target="_blank">ver aviso</a> · `:''}<span style="color:${gColor(p.gestion)};font-weight:700">${esc(p.gestion||'')}</span>
+        ${safeUrl(p.url)?linkUrl(p.url,'ver aviso')+' · ':''}<span style="color:${gColor(p.gestion)};font-weight:700">${esc(p.gestion||'')}</span>
         ${ll.aprox?'<br><span style="color:#7a8494">📍 ubicación aproximada (por zona)</span>':'<br><span style="color:#0F6FC6">📍 ubicación geocodificada</span>'}`)
       .addTo(mapObj);
     window._mk.push(m); pts.push([ll.lat,ll.lon]); });
@@ -1180,7 +1189,7 @@ function dl(name,content,type){ const b=new Blob([content],{type}); const a=docu
 function exportJSON(){ dl('crespo-crm-'+new Date().toISOString().slice(0,10)+'.json', JSON.stringify(DB,null,2),'application/json'); }
 function exportCSV(){ const h=['id','zona','tipologia','direccion','m2','precio_pub','descuento','precio_real','usd_m2','fecha_aviso','fecha_alta','dias_en_crm','estado','comentarios','gestion','proxima_accion','fecha_seguimiento','responsable','estado_tarea','contacto_nombre','contacto_inmobiliaria','contacto_telefono','contacto_email','acciones','portal','url'];
   const rows=DB.propiedades.map(p=>{ const c=p.contacto||{}; const row=Object.assign({},p,{dias_en_crm:(diasCRM(p)===null?'':diasCRM(p)),contacto_nombre:c.nombre||'',contacto_inmobiliaria:c.inmobiliaria||'',contacto_telefono:c.telefono||'',contacto_email:c.email||'',acciones:(p.acciones||[]).map(a=>a.fecha+': '+a.texto).join(' | ')});
-    return h.map(k=>`"${(row[k]!==undefined&&row[k]!==''?row[k]:'').toString().replace(/"/g,'""')}"`).join(','); });
+    return h.map(k=>{ let s=(row[k]!==undefined&&row[k]!==''?row[k]:'').toString(); if(/^[=+@\t]|^-[^\d.]/.test(s)) s="'"+s; /* evita que Excel ejecute fórmulas metidas en un aviso */ return `"${s.replace(/"/g,'""')}"`; }).join(','); });
   dl('crespo-propiedades.csv',[h.join(','),...rows].join('\n'),'text/csv'); }
 function importJSON(e){ const f=e.target.files[0]; if(!f)return; const r=new FileReader(); r.onload=()=>{ try{ const d=JSON.parse(r.result); if(!d.zonas||!d.propiedades) throw new Error('formato'); DB=d; save(); alert('Base importada.'); show('dashboard'); }catch(err){ alert('Archivo inválido: '+err.message); } }; r.readAsText(f); }
 
