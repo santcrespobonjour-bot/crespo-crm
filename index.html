@@ -92,6 +92,7 @@
   <section class="view" id="v-dashboard"></section>
   <section class="view" id="v-zonas"></section>
   <section class="view" id="v-propiedades"></section>
+  <section class="view" id="v-tareas"></section>
   <section class="view" id="v-historico"></section>
   <section class="view" id="v-valorizacion"></section>
   <section class="view" id="v-mapa"><h2>Mapa de propiedades</h2><div class="panel"><div id="mapControls"></div><div id="map"></div><p class="small muted" style="margin-top:8px">Cada punto es una propiedad de la base, coloreada por tipología. Clic para ver su ficha resumida. Los puntos aproximados se ubican alrededor del centro de su zona.</p></div></section>
@@ -204,7 +205,12 @@ async function loadNotas(id){ const c=sbClient(); if(!c||!sbUser) return; try{ c
     const p=DB.propiedades.find(x=>x.id===id); if(!p) return; p._notas=r.data||[]; p._notasLoaded=true; if(fichaId===id&&document.getElementById('ficha').open) renderFicha();
   }catch(e){ console.warn('loadNotas',e); } }
 async function delNota(id){ if(!confirm('¿Borrar esta nota?')) return; const c=sbClient(); try{ const r=await c.from('notas').delete().eq('id',id); if(r.error) throw r.error; await loadNotas(fichaId); }catch(e){ alert('No se pudo borrar: '+(e.message||e)); } }
-async function liveUpsert(p){ if(!sbUser) return; const c=sbClient(); try{ const r=await c.from('propiedades').upsert(toRow(p),{onConflict:'id'}); if(r.error) throw r.error; }catch(e){ console.warn('liveUpsert',e); } }
+async function liveUpsert(p){ if(!sbUser) return; const c=sbClient(); if(!c) return; const row=toRow(p);
+  try{ let r=await c.from('propiedades').upsert(row,{onConflict:'id'});
+    if(r.error){ const m=(r.error.message||''); const miss=['responsable','estado_tarea','fecha_alta','lat','lon'].filter(f=>m.indexOf(f)>=0);
+      if(miss.length){ const o=Object.assign({},row); miss.forEach(f=>delete o[f]); r=await c.from('propiedades').upsert(o,{onConflict:'id'}); } }
+    if(r.error) throw r.error;
+  }catch(e){ console.warn('liveUpsert',e); } }
 async function liveUpsertZona(z){ if(!sbUser) return; const c=sbClient(); try{ const r=await c.from('zonas').upsert(Object.assign({},z,{valorizacion:DB.valorizacion[z.id]||{}}),{onConflict:'id'}); if(r.error) throw r.error; }catch(e){ console.warn('liveUpsertZona',e); } }
 
 /* -------------------- PLANTILLAS DE MENSAJES (WhatsApp / Mail) -------------------- */
@@ -244,7 +250,7 @@ function editTemplates(){ const tpl=msgTemplates();
 }
 const SEED_COMMENTS={};
 const SEED_CONTACTS={};
-function migrate(){ DB.propiedades.forEach(p=>{ if(p.comentarios===undefined) p.comentarios = SEED_COMMENTS[p.id]||''; if(p.gestion===undefined) p.gestion='Sin clasificar'; if(p.proxima_accion===undefined) p.proxima_accion=''; if(p.fecha_seguimiento===undefined) p.fecha_seguimiento=''; if(p.contacto===undefined) p.contacto = SEED_CONTACTS[p.id] || {nombre:'',telefono:'',email:'',inmobiliaria:''}; if(!Array.isArray(p.acciones)) p.acciones=[];
+function migrate(){ DB.propiedades.forEach(p=>{ if(p.comentarios===undefined) p.comentarios = SEED_COMMENTS[p.id]||''; if(p.gestion===undefined) p.gestion='Sin clasificar'; if(p.proxima_accion===undefined) p.proxima_accion=''; if(p.fecha_seguimiento===undefined) p.fecha_seguimiento=''; if(p.responsable===undefined) p.responsable=''; if(p.estado_tarea===undefined) p.estado_tarea = (p.proxima_accion||'').trim()?'Pendiente':''; if(p.contacto===undefined) p.contacto = SEED_CONTACTS[p.id] || {nombre:'',telefono:'',email:'',inmobiliaria:''}; if(!Array.isArray(p.acciones)) p.acciones=[];
   /* alta en CRM = cuándo entró a ESTA base. NO se estima con fecha_aviso (esa es la antigüedad del aviso en el portal).
      Las propiedades viejas quedan s/d hasta traer created_at de Supabase (botón en Base de datos). */
   if(p.fecha_alta===undefined) p.fecha_alta='';
@@ -258,6 +264,15 @@ function diasCRM(p){ if(!p.fecha_alta) return null; const d=Math.floor((Date.now
 function antigBucket(p){ const d=diasCRM(p); if(d===null) return 'sd'; return d<=7?'nuevas' : d<=30?'30' : d<=90?'90' : 'viejas'; }
 function antigColor(p){ const b=antigBucket(p), a=ANTIG.find(x=>x.v===b); return a?a.c:'#7a8494'; }
 function diasTxt(p){ const d=diasCRM(p); if(d===null) return 's/d'; return d===0?'hoy' : d===1?'1 día' : d+' días'; }
+/* -------------------- TAREAS (responsable + estado) -------------------- */
+const RESPONSABLES=['Mario','Martín','Santiago'];
+const ESTADOS_TAREA=[{v:'Pendiente',c:'#8EAADB'},{v:'Activa',c:'#0F6FC6'},{v:'Cerrada',c:'#1F3864'}];
+function estadoTareaColor(v){ const e=ESTADOS_TAREA.find(x=>x.v===v); return e?e.c:'#8892a0'; }
+function respOpts(sel){ return '<option value="">— sin asignar —</option>'+RESPONSABLES.map(r=>`<option ${sel===r?'selected':''}>${r}</option>`).join(''); }
+function estadoTareaOpts(sel){ return '<option value="">—</option>'+ESTADOS_TAREA.map(e=>`<option ${sel===e.v?'selected':''}>${e.v}</option>`).join(''); }
+/* estado mostrado: si hay acción a tomar y no se fijó estado, se asume Pendiente */
+function tareaEstado(p){ return p.estado_tarea || ((p.proxima_accion||'').trim()?'Pendiente':''); }
+function setTarea(id,campo,valor){ const p=DB.propiedades.find(x=>x.id===id); if(!p)return; p[campo]=valor; if(campo==='estado_tarea'&&!valor&&(p.proxima_accion||'').trim()) p.estado_tarea='Pendiente'; save(); liveUpsert(p); renderTareas(); }
 function setCampo(id,campo,valor){ const p=DB.propiedades.find(p=>p.id===id); if(!p)return; p[campo]=valor; save(); liveUpsert(p); if(campo==='gestion') renderProps(); }
 function gotoGestion(v){ propFilter.gestion=[v]; propFilter.zonas=[...dashFilter.zonas]; propFilter.tips=[...dashFilter.tips]; propFilter.antig=[]; propFilter.q=''; show('propiedades'); }
 
@@ -319,6 +334,8 @@ function renderFicha(){
     <h4>Próxima acción a tomar</h4>
     <div class="grid">
       <div style="grid-column:1/-1"><label>¿Qué hay que hacer?</label><input id="c_pacc" value="${esc(p.proxima_accion)}" placeholder="ej: llamar inmobiliaria, coordinar visita"></div>
+      <div><label>Responsable</label><select id="c_resp">${respOpts(p.responsable||'')}</select></div>
+      <div><label>Estado</label><select id="c_estado" style="font-weight:700;color:${estadoTareaColor(tareaEstado(p))}">${estadoTareaOpts(p.estado_tarea||'')}</select></div>
       <div><label>Fecha de seguimiento</label><input id="c_fseg" type="date" value="${p.fecha_seguimiento||''}"></div>
       <div><label>Aviso</label>${p.url?`<div style="padding-top:7px"><a href="${p.url}" target="_blank">Abrir aviso ↗</a></div>`:'<div class="small muted" style="padding-top:8px">—</div>'}</div>
     </div>
@@ -333,14 +350,59 @@ function renderFicha(){
     </div>
     ${currentAnalyst()?'':`<p class="small muted" style="margin:4px 2px;color:#c0392b">⚠ ${sbCfg().url?'Ingresá con tu usuario':'Elegí quién sos'} arriba a la derecha para que la nota quede firmada.</p>`}`;
 }
-function syncFichaInputs(){ const p=DB.propiedades.find(x=>x.id===fichaId); if(!p)return; p.contacto={nombre:val('c_nombre'),inmobiliaria:val('c_inmo'),telefono:val('c_tel'),email:val('c_mail')}; p.proxima_accion=val('c_pacc'); p.fecha_seguimiento=val('c_fseg'); save(); liveUpsert(p); }
+function syncFichaInputs(){ const p=DB.propiedades.find(x=>x.id===fichaId); if(!p)return; p.contacto={nombre:val('c_nombre'),inmobiliaria:val('c_inmo'),telefono:val('c_tel'),email:val('c_mail')}; p.proxima_accion=val('c_pacc'); p.fecha_seguimiento=val('c_fseg'); p.responsable=val('c_resp'); p.estado_tarea=val('c_estado')||((p.proxima_accion||'').trim()?'Pendiente':''); save(); liveUpsert(p); }
 function addAccion(){ const p=DB.propiedades.find(x=>x.id===fichaId); const t=(val('na_texto')||'').trim(); if(!t) return;
   if(!currentAnalyst() && !confirm('No hay analista identificado: la nota quedará sin firma. ¿Registrar igual?')) return;
   syncFichaInputs();
   if(sbUser){ logAccion(p,t); return; }
   p.acciones.push({fecha:val('na_fecha')||hoyStr(),texto:t,autor:currentAnalyst()}); save(); renderFicha(); }
 function delAccion(fecha,encTexto){ const p=DB.propiedades.find(x=>x.id===fichaId); const t=decodeURIComponent(encTexto); const i=p.acciones.findIndex(a=>a.fecha===fecha&&a.texto===t); if(i>=0){ p.acciones.splice(i,1); save(); renderFicha(); } }
-function closeFicha(saveIt){ if(saveIt){ syncFichaInputs(); save(); } document.getElementById('ficha').close(); if(document.getElementById('v-propiedades').classList.contains('active')) renderProps(); if(document.getElementById('v-dashboard').classList.contains('active')) renderDashboard(); }
+function closeFicha(saveIt){ if(saveIt){ syncFichaInputs(); save(); } document.getElementById('ficha').close(); if(document.getElementById('v-propiedades').classList.contains('active')) renderProps(); if(document.getElementById('v-dashboard').classList.contains('active')) renderDashboard(); if(document.getElementById('v-tareas').classList.contains('active')) renderTareas(); }
+
+/* -------------------- TAREAS (pestaña) -------------------- */
+let tareaFilter={estado:[],resp:[]};
+function tareaPickEstado(v){ tareaFilter.estado=msPick(tareaFilter.estado,v); renderTareas(); }
+function tareaPickResp(v){ tareaFilter.resp=msPick(tareaFilter.resp,v); renderTareas(); }
+function tareaClear(){ tareaFilter={estado:[],resp:[]}; renderTareas(); }
+function renderTareas(){
+  const cont=document.getElementById('v-tareas');
+  const all=DB.propiedades.filter(p=>(p.proxima_accion||'').trim());
+  const hoy=hoyStr();
+  const cnt={Pendiente:0,Activa:0,Cerrada:0};
+  all.forEach(p=>{ const s=tareaEstado(p); if(cnt[s]!==undefined) cnt[s]++; });
+  const abiertas=cnt.Pendiente+cnt.Activa;
+  const vencidas=all.filter(p=>p.fecha_seguimiento&&p.fecha_seguimiento<hoy&&tareaEstado(p)!=='Cerrada').length;
+  const cntR={}; RESPONSABLES.forEach(r=>cntR[r]=0); let sinAsig=0;
+  all.forEach(p=>{ if(p.responsable&&cntR[p.responsable]!==undefined) cntR[p.responsable]++; else if(!p.responsable) sinAsig++; });
+  const fe=tareaFilter.estado, fr=tareaFilter.resp;
+  let list=all.filter(p=>{ const s=tareaEstado(p), r=p.responsable||'—'; return (!fe.length||fe.includes(s))&&(!fr.length||fr.includes(r)); });
+  const order={Activa:0,Pendiente:1,Cerrada:2};
+  list.sort((a,b)=>{ const oa=order[tareaEstado(a)]!==undefined?order[tareaEstado(a)]:1, ob=order[tareaEstado(b)]!==undefined?order[tareaEstado(b)]:1; if(oa!==ob) return oa-ob; return (''+(a.fecha_seguimiento||'9999-99-99')).localeCompare(''+(b.fecha_seguimiento||'9999-99-99')); });
+  const chip=(label,count,active,onclick,color)=>`<button class="act ghost mini" onclick="${onclick}" style="border-color:${color};${active?`background:${color};color:#fff`:`color:${color}`}">${esc(label)} <b>${count}</b></button>`;
+  const estadoChips=ESTADOS_TAREA.map(e=>chip(e.v,cnt[e.v]||0,fe.includes(e.v),`tareaPickEstado('${e.v}')`,e.c)).join(' ');
+  const respChips=RESPONSABLES.map(r=>chip(r,cntR[r]||0,fr.includes(r),`tareaPickResp('${r}')`,'#2E5496')).join(' ')+' '+chip('Sin asignar',sinAsig,fr.includes('—'),`tareaPickResp('—')`,'#8892a0');
+  const rows=list.map(p=>{ const s=tareaEstado(p); const vc=p.fecha_seguimiento&&p.fecha_seguimiento<hoy&&s!=='Cerrada';
+    return `<tr style="cursor:pointer" onclick="if(!/SELECT|OPTION/.test(event.target.tagName))openFicha('${p.id}')">
+      <td><b>${esc(p.direccion||'s/d')}</b><div class="small muted">${esc(zoneName(p.zona))} · ${esc(p.tipologia||'')}</div></td>
+      <td>${esc(p.proxima_accion||'')}</td>
+      <td><select onchange="setTarea('${p.id}','responsable',this.value)" style="min-width:118px">${respOpts(p.responsable||'')}</select></td>
+      <td><select onchange="setTarea('${p.id}','estado_tarea',this.value)" style="min-width:118px;font-weight:700;color:${estadoTareaColor(s)}">${estadoTareaOpts(p.estado_tarea||'')}</select></td>
+      <td>${p.fecha_seguimiento?`<span class="pill" style="background:${vc?'#1F3864':'#0F6FC6'}">${p.fecha_seguimiento}${vc?' · vencida':''}</span>`:'<span class="small muted">s/d</span>'}</td>
+    </tr>`; }).join('');
+  cont.innerHTML=`<h2>Tareas</h2>
+    <div class="panel">
+      <div class="cards">
+        <div class="card"><div class="v">${all.length}</div><div class="l">Tareas totales</div></div>
+        <div class="card"><div class="v">${abiertas}</div><div class="l">Abiertas (activas + pendientes)</div></div>
+        <div class="card"><div class="v">${cnt.Cerrada}</div><div class="l">Cerradas</div></div>
+        <div class="card"><div class="v" style="color:#1F3864">${vencidas}</div><div class="l">Vencidas sin cerrar</div></div>
+      </div>
+      <div style="margin:12px 0 4px"><span class="small muted">Estado:</span> ${estadoChips} ${(fe.length||fr.length)?`<button class="act ghost mini" onclick="tareaClear()">✕ limpiar filtros</button>`:''}</div>
+      <div style="margin:6px 0 12px"><span class="small muted">Responsable:</span> ${respChips}</div>
+      ${list.length?`<div style="overflow:auto"><table><thead><tr><th>Propiedad</th><th>Acción a tomar</th><th>Responsable</th><th>Estado</th><th>Seguimiento</th></tr></thead><tbody>${rows}</tbody></table></div>`
+        :`<p class="small muted">No hay tareas${(fe.length||fr.length)?' con ese filtro':''}. Las tareas se crean cargando una <b>“próxima acción a tomar”</b> en la ficha de una propiedad (pestaña <b>Propiedades</b> → botón 🗂 → sección “Próxima acción a tomar”).</p>`}
+    </div>`;
+}
 
 /* -------------------- ACTUALIZACIÓN DE BASE (merge con dedupe por URL) -------------------- */
 /* Nota: un archivo local no puede rastrear portales por CORS. Este lote es data real ya relevada;
@@ -352,7 +414,7 @@ function mergeNuevos(arr){ const urls=new Set(DB.propiedades.map(p=>p.url)); let
 function refreshBase(){ const r=mergeNuevos(NUEVOS_AVISOS); alert('Actualización de base:\n• '+r.added+' aviso(s) nuevo(s) agregado(s)\n• '+r.dup+' ya estaban en la base (omitidos por duplicado)\n\nExportá el JSON en la pestaña Base para conservar el histórico.'); renderHistorico(); }
 
 /* -------------------- NAV -------------------- */
-const TABS=[['dashboard','Panel'],['zonas','Zonas'],['propiedades','Propiedades'],['historico','Histórico'],['valorizacion','Valorización'],['mapa','Mapa'],['base','Base de datos']];
+const TABS=[['dashboard','Panel'],['zonas','Zonas'],['propiedades','Propiedades'],['tareas','Tareas'],['historico','Histórico'],['valorizacion','Valorización'],['mapa','Mapa'],['base','Base de datos']];
 const nav=document.getElementById('nav');
 TABS.forEach(([id,label])=>{ const b=document.createElement('button'); b.textContent=label; b.dataset.t=id; b.onclick=()=>show(id); nav.appendChild(b); });
 let mapObj=null;
@@ -363,6 +425,7 @@ function show(id){
   if(id==='dashboard') renderDashboard();
   if(id==='zonas') renderZonas();
   if(id==='propiedades') renderProps();
+  if(id==='tareas') renderTareas();
   if(id==='historico') renderHistorico();
   if(id==='valorizacion') renderValor();
   if(id==='base') renderBase();
@@ -1063,10 +1126,12 @@ create table propiedades (
   id text primary key, zona text references zonas(id), tipologia text, direccion text,
   m2 numeric, precio_pub numeric, descuento numeric, precio_real numeric, usd_m2 numeric,
   fecha_aviso date, fecha_alta date, lat numeric, lon numeric, estado text, portal text, url text, created_at timestamptz default now());
--- si la tabla ya existe, agregá las columnas nuevas (alta en CRM + coordenadas del mapa):
+-- si la tabla ya existe, agregá las columnas nuevas (alta en CRM + mapa + tareas):
 --   alter table propiedades add column if not exists fecha_alta date,
---     add column if not exists lat numeric, add column if not exists lon numeric;
--- (sin esas columnas el CRM sigue funcionando: la antigüedad usa created_at y el mapa ubica por zona)
+--     add column if not exists lat numeric, add column if not exists lon numeric,
+--     add column if not exists responsable text, add column if not exists estado_tarea text;
+-- (sin esas columnas el CRM sigue funcionando: la antigüedad usa created_at, el mapa ubica por zona
+--  y las tareas quedan en el navegador hasta que agregues responsable/estado_tarea)
 
 -- notas colaborativas por analista (cada nota es una fila → nunca se pisan). Ver SUPABASE_ANALISTAS.md
 create table notas (
@@ -1086,7 +1151,7 @@ create table historico (
 }
 function dl(name,content,type){ const b=new Blob([content],{type}); const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download=name; a.click(); }
 function exportJSON(){ dl('crespo-crm-'+new Date().toISOString().slice(0,10)+'.json', JSON.stringify(DB,null,2),'application/json'); }
-function exportCSV(){ const h=['id','zona','tipologia','direccion','m2','precio_pub','descuento','precio_real','usd_m2','fecha_aviso','fecha_alta','dias_en_crm','estado','comentarios','gestion','proxima_accion','fecha_seguimiento','contacto_nombre','contacto_inmobiliaria','contacto_telefono','contacto_email','acciones','portal','url'];
+function exportCSV(){ const h=['id','zona','tipologia','direccion','m2','precio_pub','descuento','precio_real','usd_m2','fecha_aviso','fecha_alta','dias_en_crm','estado','comentarios','gestion','proxima_accion','fecha_seguimiento','responsable','estado_tarea','contacto_nombre','contacto_inmobiliaria','contacto_telefono','contacto_email','acciones','portal','url'];
   const rows=DB.propiedades.map(p=>{ const c=p.contacto||{}; const row=Object.assign({},p,{dias_en_crm:(diasCRM(p)===null?'':diasCRM(p)),contacto_nombre:c.nombre||'',contacto_inmobiliaria:c.inmobiliaria||'',contacto_telefono:c.telefono||'',contacto_email:c.email||'',acciones:(p.acciones||[]).map(a=>a.fecha+': '+a.texto).join(' | ')});
     return h.map(k=>`"${(row[k]!==undefined&&row[k]!==''?row[k]:'').toString().replace(/"/g,'""')}"`).join(','); });
   dl('crespo-propiedades.csv',[h.join(','),...rows].join('\n'),'text/csv'); }
@@ -1104,9 +1169,9 @@ async function sbInit(){ const c=sbClient(); if(!c){ renderWhoami(); return; } t
 function sbConnect(){ const url=(val('sb_url_in')||'').trim(), key=(val('sb_key_in')||'').trim(); if(!url||!key){ alert('Completá URL y publishable key.'); return; } localStorage.setItem('sb_url',url); localStorage.setItem('sb_key',key); sb=null; sbUser=null; if(sbClient()){ sbInit(); alert('Conexión guardada. Ahora tocá "Ingresar" (arriba a la derecha) con tu usuario de analista.'); renderBase(); } }
 function numN(v){ return (v===''||v===undefined||v===null||isNaN(+v))?null:+v; }
 function dtN(v){ return v?v:null; }
-function toRow(p){ return {id:p.id,zona:p.zona,tipologia:p.tipologia,direccion:p.direccion,m2:numN(p.m2),precio_pub:numN(p.precio_pub),descuento:numN(p.descuento),precio_real:numN(p.precio_real),usd_m2:numN(p.usd_m2),fecha_aviso:dtN(p.fecha_aviso),fecha_alta:dtN(p.fecha_alta),lat:numN(p.lat),lon:numN(p.lon),estado:p.estado||'',comentarios:p.comentarios||'',gestion:p.gestion||'Sin clasificar',proxima_accion:p.proxima_accion||'',fecha_seguimiento:dtN(p.fecha_seguimiento),contacto:p.contacto||{},acciones:p.acciones||[],portal:p.portal||'',url:p.url||''}; }
+function toRow(p){ return {id:p.id,zona:p.zona,tipologia:p.tipologia,direccion:p.direccion,m2:numN(p.m2),precio_pub:numN(p.precio_pub),descuento:numN(p.descuento),precio_real:numN(p.precio_real),usd_m2:numN(p.usd_m2),fecha_aviso:dtN(p.fecha_aviso),fecha_alta:dtN(p.fecha_alta),lat:numN(p.lat),lon:numN(p.lon),estado:p.estado||'',comentarios:p.comentarios||'',gestion:p.gestion||'Sin clasificar',proxima_accion:p.proxima_accion||'',fecha_seguimiento:dtN(p.fecha_seguimiento),responsable:p.responsable||'',estado_tarea:p.estado_tarea||'',contacto:p.contacto||{},acciones:p.acciones||[],portal:p.portal||'',url:p.url||''}; }
 /* alta en CRM: si la tabla no tiene fecha_alta, se usa created_at (fecha real de inserción en Supabase) */
-function fromRow(r){ return {id:r.id,zona:r.zona,tipologia:r.tipologia,direccion:r.direccion,m2:r.m2==null?'':r.m2,precio_pub:r.precio_pub==null?'':r.precio_pub,descuento:r.descuento==null?'':r.descuento,precio_real:r.precio_real==null?'':r.precio_real,usd_m2:r.usd_m2==null?'':r.usd_m2,fecha_aviso:r.fecha_aviso||'',fecha_alta:r.fecha_alta||(r.created_at?(''+r.created_at).slice(0,10):''),lat:r.lat==null?'':r.lat,lon:r.lon==null?'':r.lon,estado:r.estado||'',comentarios:r.comentarios||'',gestion:r.gestion||'Sin clasificar',proxima_accion:r.proxima_accion||'',fecha_seguimiento:r.fecha_seguimiento||'',contacto:r.contacto||{nombre:'',telefono:'',email:'',inmobiliaria:''},acciones:r.acciones||[],portal:r.portal||'',url:r.url||''}; }
+function fromRow(r){ return {id:r.id,zona:r.zona,tipologia:r.tipologia,direccion:r.direccion,m2:r.m2==null?'':r.m2,precio_pub:r.precio_pub==null?'':r.precio_pub,descuento:r.descuento==null?'':r.descuento,precio_real:r.precio_real==null?'':r.precio_real,usd_m2:r.usd_m2==null?'':r.usd_m2,fecha_aviso:r.fecha_aviso||'',fecha_alta:r.fecha_alta||(r.created_at?(''+r.created_at).slice(0,10):''),lat:r.lat==null?'':r.lat,lon:r.lon==null?'':r.lon,estado:r.estado||'',comentarios:r.comentarios||'',gestion:r.gestion||'Sin clasificar',proxima_accion:r.proxima_accion||'',fecha_seguimiento:r.fecha_seguimiento||'',responsable:r.responsable||'',estado_tarea:r.estado_tarea||'',contacto:r.contacto||{nombre:'',telefono:'',email:'',inmobiliaria:''},acciones:r.acciones||[],portal:r.portal||'',url:r.url||''}; }
 async function sbPush(){ if(!ensureSb()) return; if(!sbUser){ alert('Ingresá primero (botón "Ingresar" arriba a la derecha). Las tablas requieren sesión.'); return; } try{
     const zonas=DB.zonas.map(z=>Object.assign({},z,{valorizacion:DB.valorizacion[z.id]||{}}));
     let r=await sb.from('zonas').upsert(zonas,{onConflict:'id'}); if(r.error) throw r.error;
@@ -1115,10 +1180,10 @@ async function sbPush(){ if(!ensureSb()) return; if(!sbUser){ alert('Ingresá pr
     /* si la tabla aún no tiene alguna columna nueva (fecha_alta, lat, lon), se reintenta sin ella hasta 3 veces */
     let intentos=0, faltantes=[];
     while(r.error && intentos<3){ const col=(r.error.message||'').match(/'([a-z_]+)' column|column "?([a-z_]+)"?/i); const c=col&&(col[1]||col[2]);
-      if(!c || !['fecha_alta','lat','lon'].includes(c)) break;
+      if(!c || !['fecha_alta','lat','lon','responsable','estado_tarea'].includes(c)) break;
       faltantes.push(c); r=await sb.from('propiedades').upsert(rows.map(x=>{ const o=Object.assign({},x); faltantes.forEach(f=>delete o[f]); return o; }),{onConflict:'id'}); intentos++; }
     if(r.error) throw r.error;
-    if(faltantes.length) setTimeout(()=>alert('⚠ Se subió, pero tu tabla no tiene la(s) columna(s): '+faltantes.join(', ')+'.\nPara guardar esos datos, corré una vez en el SQL editor de Supabase:\nalter table propiedades add column if not exists lat numeric, add column if not exists lon numeric, add column if not exists fecha_alta date;'),100);
+    if(faltantes.length) setTimeout(()=>alert('⚠ Se subió, pero tu tabla no tiene la(s) columna(s): '+faltantes.join(', ')+'.\nPara guardar esos datos, corré una vez en el SQL editor de Supabase:\nalter table propiedades add column if not exists lat numeric, add column if not exists lon numeric, add column if not exists fecha_alta date, add column if not exists responsable text, add column if not exists estado_tarea text;'),100);
     await sb.from('historico').delete().gte('id',0);
     if(DB.historico.length){ r=await sb.from('historico').insert(DB.historico.map(h=>({zona:h.zona,tipologia:h.tipologia,anio:h.anio,usd_m2:h.usd_m2,fuente:h.fuente}))); if(r.error) throw r.error; }
     alert('Base subida a Supabase:\n• '+DB.zonas.length+' zonas\n• '+DB.propiedades.length+' propiedades\n• '+DB.historico.length+' puntos históricos');
@@ -1150,7 +1215,7 @@ function qd(v){ return v?("'"+v+"'"):'null'; }
 function genSQL(){
   let s='-- Datos Crespo Real State para Supabase (correr después de supabase-schema.sql)\nbegin;\n';
   DB.zonas.forEach(function(z){ s+='insert into zonas(id,nombre,departamento,localidad,tipologia,usd_m2_ref,lat,lon,perfil,notas,valorizacion) values ('+q(z.id)+','+q(z.nombre)+','+q(z.departamento)+','+q(z.localidad)+','+q(z.tipologia)+','+nz(z.usd_m2_ref)+','+nz(z.lat)+','+nz(z.lon)+','+q(z.perfil)+','+q(z.notas)+','+q(JSON.stringify(DB.valorizacion[z.id]||{}))+'::jsonb) on conflict (id) do update set valorizacion=excluded.valorizacion, usd_m2_ref=excluded.usd_m2_ref;\n'; });
-  DB.propiedades.forEach(function(p){ var r=toRow(p); s+='insert into propiedades(id,zona,tipologia,direccion,m2,precio_pub,descuento,precio_real,usd_m2,fecha_aviso,estado,comentarios,gestion,proxima_accion,fecha_seguimiento,contacto,acciones,portal,url) values ('+q(r.id)+','+q(r.zona)+','+q(r.tipologia)+','+q(r.direccion)+','+nz(r.m2)+','+nz(r.precio_pub)+','+nz(r.descuento)+','+nz(r.precio_real)+','+nz(r.usd_m2)+','+qd(r.fecha_aviso)+','+q(r.estado)+','+q(r.comentarios)+','+q(r.gestion)+','+q(r.proxima_accion)+','+qd(r.fecha_seguimiento)+','+q(JSON.stringify(r.contacto))+'::jsonb,'+q(JSON.stringify(r.acciones))+'::jsonb,'+q(r.portal)+','+q(r.url)+') on conflict (url) do nothing;\n'; });
+  DB.propiedades.forEach(function(p){ var r=toRow(p); s+='insert into propiedades(id,zona,tipologia,direccion,m2,precio_pub,descuento,precio_real,usd_m2,fecha_aviso,estado,comentarios,gestion,proxima_accion,fecha_seguimiento,responsable,estado_tarea,contacto,acciones,portal,url) values ('+q(r.id)+','+q(r.zona)+','+q(r.tipologia)+','+q(r.direccion)+','+nz(r.m2)+','+nz(r.precio_pub)+','+nz(r.descuento)+','+nz(r.precio_real)+','+nz(r.usd_m2)+','+qd(r.fecha_aviso)+','+q(r.estado)+','+q(r.comentarios)+','+q(r.gestion)+','+q(r.proxima_accion)+','+qd(r.fecha_seguimiento)+','+q(r.responsable)+','+q(r.estado_tarea)+','+q(JSON.stringify(r.contacto))+'::jsonb,'+q(JSON.stringify(r.acciones))+'::jsonb,'+q(r.portal)+','+q(r.url)+') on conflict (url) do nothing;\n'; });
   DB.historico.forEach(function(h){ s+='insert into historico(zona,tipologia,anio,usd_m2,fuente) values ('+q(h.zona)+','+q(h.tipologia)+','+(h.anio||'null')+','+nz(h.usd_m2)+','+q(h.fuente)+');\n'; });
   s+='commit;\n';
   dl('crespo-datos-supabase.sql',s,'text/sql');
