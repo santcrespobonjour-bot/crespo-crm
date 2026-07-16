@@ -879,31 +879,38 @@ function generarInforme(){
   const sel=DB.propiedades.filter(p=>(!fz.length||fz.includes(p.zona))&&(!ft.length||ft.includes(p.tipologia)));
   if(!sel.length){ alert('No hay propiedades en ese segmento.'); return; }
   const zonasSel = fz.length? fz.slice() : [...new Set(sel.map(p=>p.zona))];
-  const s=statsUSD(sel);
   const nomZ = fz.length? fz.map(zoneName).join(' + ') : 'Todas las zonas';
   const nomT = ft.length? ft.join(' + ') : 'Todas las tipologías';
   const hoy=hoyStr();
   const money=v=>v?('US$ '+(+v).toLocaleString('es-UY')):'s/d';
   const años=proyCfg.años;
+  /* mediana por tipología: NO mezclar apto/casa/terreno (USD/m² incomparables).
+     Se calcula sobre el crudo porque la mediana no se distorsiona con extremos. */
+  const s0=statsUSD(sel);
+  const medByTipo={}; { const g={}; sel.forEach(p=>{ if(+p.usd_m2>0){ (g[p.tipologia]=g[p.tipologia]||[]).push(+p.usd_m2); } }); Object.keys(g).forEach(t=>{ medByTipo[t]=Math.round(median(g[t])); }); }
+  const refTipo=p=>medByTipo[p.tipologia]||s0.med;
+  /* Plausibilidad del dato: los portales publican m² mal cargados (ej. 1 m² o 11.111 m²),
+     lo que produce USD/m² absurdos que ensucian rango, promedio y comparables.
+     Se descarta lo que se aparta groseramente de la mediana de su propia tipología. */
+  const plausible=p=>{ const u=+p.usd_m2; if(!(u>0)) return false; const ref=refTipo(p); if(!ref) return true; return u>=0.45*ref && u<=3*ref; };
+  const selPlaus=sel.filter(plausible);
+  const descartados=sel.filter(p=>+p.usd_m2>0&&!plausible(p)).length;
+  const s=statsUSD(selPlaus);
   const pivot=s.med; // la mediana manda: pivote de selección y de salida
-  /* comparables ordenados por USD/m² (asc) */
-  const comps=[...sel].filter(p=>+p.usd_m2>0).sort((a,b)=>(+a.usd_m2)-(+b.usd_m2));
-  /* selección curada: 5 principales sobre la mediana + piso (mín.) + techo (máx.) */
+  /* comparables ordenados por USD/m² (asc), ya sin datos implausibles */
+  const comps=[...selPlaus].sort((a,b)=>(+a.usd_m2)-(+b.usd_m2));
+  /* selección curada: 5 principales por encima de la mediana + los 4 más cercanos por debajo.
+     Sin mínimos/máximos: los extremos son casi siempre m² mal cargados en el portal. */
   let compSel;
-  if(comps.length<=7){ compSel=comps.slice(); }
+  if(comps.length<=9){ compSel=comps.slice(); }
   else{
-    const piso=comps[0], techo=comps[comps.length-1];
-    const principales=comps.filter(p=>+p.usd_m2>=pivot).slice(0,5);
-    const ids=new Set(); compSel=[];
-    [piso,...principales,techo].forEach(p=>{ if(p&&!ids.has(p.id)){ ids.add(p.id); compSel.push(p);} });
-    compSel.sort((a,b)=>(+a.usd_m2)-(+b.usd_m2));
+    const arriba=comps.filter(p=>+p.usd_m2>=pivot).slice(0,5);
+    const abajo=comps.filter(p=>+p.usd_m2<pivot).slice(-4);
+    compSel=[...abajo,...arriba];
   }
-  const compRol=p=>{ if(comps.length&&p.id===comps[0].id) return 'Piso (mín.)'; if(comps.length&&p.id===comps[comps.length-1].id) return 'Techo (máx.)'; return (+p.usd_m2>=pivot)?'Representativo':'Bajo mediana'; };
+  const compRol=p=>(+p.usd_m2>=pivot)?'Sobre la mediana':'Bajo la mediana';
   /* -------- motor de oportunidades: jerarquizadas, con inversión y ganancia -------- */
   const INV={reformaUSDm2:350, regulariz:8000};
-  /* mediana por tipología dentro de la selección: NO mezclar apto/casa/terreno (USD/m² incomparables) */
-  const medByTipo={}; { const g={}; sel.forEach(p=>{ if(+p.usd_m2>0){ (g[p.tipologia]=g[p.tipologia]||[]).push(+p.usd_m2); } }); Object.keys(g).forEach(t=>{ medByTipo[t]=Math.round(median(g[t])); }); }
-  const refTipo=p=>medByTipo[p.tipologia]||pivot;
   const oportModelo=p=>{
     const price=+(p.precio_real||p.precio_pub)||0, m2=+p.m2||0, ref=refTipo(p);
     const com=((p.comentarios||'')+' '+(p.estado||'')+' '+(p.tipologia||'')).toLowerCase();
@@ -918,11 +925,9 @@ function generarInforme(){
     const difMed=(ref&&+p.usd_m2)?Math.round((+p.usd_m2/ref-1)*100):null;
     return {p,price,m2,ref,esReciclar,esRegular,reforma,regular,invTotal,valorSalida,ganancia,roi,difMed};
   };
-  /* pool: subvaluadas frente a su propia tipología. Se excluyen outliers de dato dudoso
-     (USD/m² < 45% de la mediana de su tipología ⇒ m²/tipología casi siempre mal cargados). */
-  const pool=sel.filter(p=>{ const price=+p.precio_real||+p.precio_pub, u=+p.usd_m2, ref=refTipo(p);
+  /* pool: subvaluadas frente a su propia tipología, sobre datos ya filtrados por plausibilidad */
+  const pool=selPlaus.filter(p=>{ const price=+p.precio_real||+p.precio_pub, u=+p.usd_m2, ref=refTipo(p);
     if(!(price>0)||!(u>0)) return false;
-    if(ref && u<0.45*ref) return false;
     if(p.gestion==='Tomar acción') return true;
     return ref && u<ref;
   });
@@ -969,18 +974,18 @@ function generarInforme(){
   const html=`<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Informe ${esc(nomZ)} · ${esc(nomT)}</title><style>${css}</style></head><body><div class="wrap">
     <div class="no-print"><button onclick="window.print()">🖨 Imprimir / Guardar PDF</button></div>
     <h1>Informe de mercado — ${esc(nomZ)}</h1>
-    <p class="sub"><b>${esc(nomT)}</b> · ${sel.length} comparable(s) en base · emitido ${hoy} · Crespo Real State — Estudio del Mercado (metodología ACM)</p>
+    <p class="sub"><b>${esc(nomT)}</b> · ${sel.length} propiedad(es) en el segmento · ${comps.length} comparable(s) con USD/m² validado · emitido ${hoy} · Crespo Real State — Estudio del Mercado (metodología ACM)</p>
     ${chico?`<div class="box"><b>⚠ Muestra de ${s.nv} (&lt;10):</b> valores indicativos; la mediana es más robusta que el promedio. Se refuerza al ampliar la base.</div>`:''}
+    ${descartados?`<div class="box small"><b>Control de calidad del dato:</b> se excluyeron <b>${descartados}</b> aviso(s) con USD/m² implausible frente a la mediana de su tipología. Es el síntoma típico de <b>metros cuadrados mal cargados en el portal</b> (ej. 1 m² o 11.111 m²), que distorsionan promedio y extremos.</div>`:''}
     <h2>Resumen de valores (USD/m²)</h2>
     <div class="kpis">
       <div class="kpi"><div class="v">${s.nv?s.med.toLocaleString('es-UY'):'s/d'}</div><div class="l">Mediana (referencia)</div></div>
       <div class="kpi"><div class="v">${s.nv?s.avg.toLocaleString('es-UY'):'s/d'}</div><div class="l">Promedio</div></div>
-      <div class="kpi"><div class="v" style="font-size:15px">${s.nv?s.mn.toLocaleString('es-UY')+' – '+s.mx.toLocaleString('es-UY'):'s/d'}</div><div class="l">Rango mín – máx</div></div>
-      <div class="kpi"><div class="v">${sel.length}</div><div class="l">Comparables</div></div>
+      <div class="kpi"><div class="v">${comps.length}</div><div class="l">Comparables validados</div></div>
     </div>
     <p class="small">La <b>mediana manda</b>: es el valor central de la muestra y no se distorsiona con extremos. El promedio se incluye solo como contraste.</p>
     <h2>Comparables</h2>
-    <p class="small">Selección representativa: los <b>5 principales por encima de la mediana</b>${pivot?` (US$ ${pivot.toLocaleString('es-UY')}/m²)`:''} más el <b>piso</b> (mínimo) y el <b>techo</b> (máximo) del segmento, para acotar el rango sin ruido.${comps.length>compSel.length?` Se muestran ${compSel.length} de ${comps.length} comparables con USD/m² en base.`:''}</p>
+    <p class="small">Selección representativa: los <b>5 principales por encima de la mediana</b>${pivot?` (US$ ${pivot.toLocaleString('es-UY')}/m²)`:''} y los <b>4 más cercanos por debajo</b>. <b>No se incluyen mínimos ni máximos</b>: los extremos del portal casi siempre responden a metros cuadrados mal cargados, no a precios reales de mercado.${comps.length>compSel.length?` Se muestran ${compSel.length} de ${comps.length} comparables validados.`:''}</p>
     <table><thead><tr><th>Ubicación</th><th>Zona</th><th>Tipología</th><th class="num">m²</th><th class="num">Precio</th><th class="num">USD/m²</th><th>Fecha aviso</th><th>Rol</th></tr></thead><tbody>
     ${compSel.map(p=>`<tr><td>${esc(p.direccion||'')}</td><td>${esc(zoneName(p.zona))}</td><td>${esc(p.tipologia||'')}</td><td class="num">${p.m2||'s/d'}</td><td class="num">${p.precio_real?money(p.precio_real):money(p.precio_pub)}</td><td class="num"><b>${p.usd_m2||'s/d'}</b></td><td>${p.fecha_aviso||'s/d'}</td><td class="small">${compRol(p)}</td></tr>`).join('')}
     </tbody></table>
