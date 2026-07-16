@@ -434,11 +434,27 @@ function show(id){
 
 /* -------------------- DASHBOARD -------------------- */
 function avg(arr){ arr=arr.filter(x=>typeof x==='number'&&!isNaN(x)); return arr.length? Math.round(arr.reduce((a,b)=>a+b,0)/arr.length):0; }
-let dashFilter={zonas:[],tips:[]};
+let dashFilter={zonas:[],tips:[],pmin:null,pmax:null};
 function dashPickZona(v){ dashFilter.zonas=msPick(dashFilter.zonas,v); renderDashboard(); }
 function dashPickTip(v){ dashFilter.tips=msPick(dashFilter.tips,v); renderDashboard(); }
 function dashSeg(zona,tip){ dashFilter.zonas=zona?[zona]:[]; dashFilter.tips=tip?[tip]:[]; renderDashboard(); }
 function dashAddZona(z){ if(!dashFilter.zonas.includes(z)) dashFilter.zonas.push(z); renderDashboard(); }
+/* filtro por monto: compara contra el PRECIO PUBLICADO (precio_pub) */
+function dashSetPrecio(k,v){ const n=parseFloat(v); dashFilter[k]=(v===''||isNaN(n))?null:n; renderDashboard(); }
+function dashClear(){ dashFilter={zonas:[],tips:[],pmin:null,pmax:null}; renderDashboard(); }
+function dashPrecioOn(){ return dashFilter.pmin!=null||dashFilter.pmax!=null; }
+/* predicado único del Panel: lo usan el dashboard y el informe, así filtran igual */
+function dashMatch(p){ const f=dashFilter;
+  if(f.zonas.length && !f.zonas.includes(p.zona)) return false;
+  if(f.tips.length && !f.tips.includes(p.tipologia)) return false;
+  if(f.pmin!=null||f.pmax!=null){ const pp=+p.precio_pub; if(!(pp>0)) return false;  /* sin precio pub. no se puede acotar */
+    if(f.pmin!=null && pp<f.pmin) return false;
+    if(f.pmax!=null && pp>f.pmax) return false; }
+  return true; }
+function dashPrecioTxt(){ const f=dashFilter; if(!dashPrecioOn()) return '';
+  const m=v=>'US$ '+(+v).toLocaleString('es-UY');
+  if(f.pmin!=null&&f.pmax!=null) return m(f.pmin)+' – '+m(f.pmax);
+  return f.pmin!=null? ('desde '+m(f.pmin)) : ('hasta '+m(f.pmax)); }
 /* estadísticos USD/m² de una lista de propiedades (la mediana manda) */
 function statsUSD(list){
   const v=list.map(p=>+p.usd_m2).filter(x=>x>0&&!isNaN(x));
@@ -448,8 +464,8 @@ function statsUSD(list){
 function renderDashboard(){
   const tips=[...new Set(DB.propiedades.map(p=>p.tipologia))].filter(Boolean).sort();
   const fz=dashFilter.zonas, ft=dashFilter.tips;
-  const filtrado = !!(fz.length||ft.length);
-  const sel=DB.propiedades.filter(p=>(!fz.length||fz.includes(p.zona))&&(!ft.length||ft.includes(p.tipologia)));
+  const filtrado = !!(fz.length||ft.length||dashPrecioOn());
+  const sel=DB.propiedades.filter(dashMatch);
   const s=statsUSD(sel);
   const zref=(fz.length===1)? DB.zonas.find(z=>z.id===fz[0]) : null;
   const desvio = (zref&&s.med&&+zref.usd_m2_ref)? Math.round((s.med/(+zref.usd_m2_ref)-1)*100) : null;
@@ -463,7 +479,7 @@ function renderDashboard(){
   const segFollow=sel.filter(p=>p.fecha_seguimiento).sort((a,b)=>(''+a.fecha_seguimiento).localeCompare(''+b.fecha_seguimiento));
   const nomZ = fz.length? fz.map(zoneName).join(' + ') : 'Todas las zonas';
   const nomT = ft.length? ft.join(' + ') : 'todas las tipologías';
-  const titSel = filtrado? nomZ+' · '+nomT : 'Toda la base (mezcla zonas y tipologías)';
+  const titSel = filtrado? nomZ+' · '+nomT+(dashPrecioOn()?' · precio pub. '+dashPrecioTxt():'') : 'Toda la base (mezcla zonas y tipologías)';
   document.getElementById('v-dashboard').innerHTML=`
     <h2>Panel general</h2>
     <div class="panel">
@@ -471,7 +487,10 @@ function renderDashboard(){
         <b class="small">Filtrar panel:</b>
         ${msBox('dz','Todas las zonas',DB.zonas.map(z=>({v:z.id,l:z.nombre+' ('+z.departamento+')'})),fz,'dashPickZona','renderDashboard',230)}
         ${msBox('dt','Todas las tipologías',tips.map(t=>({v:t,l:t})),ft,'dashPickTip','renderDashboard',210)}
-        ${filtrado?`<button class="act ghost mini" onclick="dashSeg('','')">✕ Limpiar</button>`:''}
+        <span class="small muted" title="Filtra por el precio publicado (precio_pub)">Precio pub. US$</span>
+        <input type="number" min="0" step="1000" placeholder="mín" value="${dashFilter.pmin!=null?dashFilter.pmin:''}" onchange="dashSetPrecio('pmin',this.value)" style="width:92px;display:inline-block">
+        <input type="number" min="0" step="1000" placeholder="máx" value="${dashFilter.pmax!=null?dashFilter.pmax:''}" onchange="dashSetPrecio('pmax',this.value)" style="width:92px;display:inline-block">
+        ${filtrado?`<button class="act ghost mini" onclick="dashClear()">✕ Limpiar</button>`:''}
         <button class="act" onclick="generarInforme()">📄 Generar informe</button>
         <span class="small muted">${s.n} propiedad(es) · ${s.nv} con USD/m²</span>
       </div>
@@ -876,8 +895,8 @@ function addHist(zona,tipologia){
 function generarInforme(){
   const fz=dashFilter.zonas, ft=dashFilter.tips;
   if(!fz.length && !ft.length){ alert('Elegí al menos una zona o una tipología en el filtro del Panel para acotar el informe.'); return; }
-  const sel=DB.propiedades.filter(p=>(!fz.length||fz.includes(p.zona))&&(!ft.length||ft.includes(p.tipologia)));
-  if(!sel.length){ alert('No hay propiedades en ese segmento.'); return; }
+  const sel=DB.propiedades.filter(dashMatch);
+  if(!sel.length){ alert('No hay propiedades en ese segmento'+(dashPrecioOn()?' con precio publicado en el rango '+dashPrecioTxt()+'.':'.')); return; }
   const zonasSel = fz.length? fz.slice() : [...new Set(sel.map(p=>p.zona))];
   const nomZ = fz.length? fz.map(zoneName).join(' + ') : 'Todas las zonas';
   const nomT = ft.length? ft.join(' + ') : 'Todas las tipologías';
@@ -974,7 +993,7 @@ function generarInforme(){
   const html=`<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Informe ${esc(nomZ)} · ${esc(nomT)}</title><style>${css}</style></head><body><div class="wrap">
     <div class="no-print"><button onclick="window.print()">🖨 Imprimir / Guardar PDF</button></div>
     <h1>Informe de mercado — ${esc(nomZ)}</h1>
-    <p class="sub"><b>${esc(nomT)}</b> · ${sel.length} propiedad(es) en el segmento · ${comps.length} comparable(s) con USD/m² validado · emitido ${hoy} · Crespo Real State — Estudio del Mercado (metodología ACM)</p>
+    <p class="sub"><b>${esc(nomT)}</b>${dashPrecioOn()?` · <b>precio publicado ${dashPrecioTxt()}</b>`:''} · ${sel.length} propiedad(es) en el segmento · ${comps.length} comparable(s) con USD/m² validado · emitido ${hoy} · Crespo Real State — Estudio del Mercado (metodología ACM)</p>
     ${chico?`<div class="box"><b>⚠ Muestra de ${s.nv} (&lt;10):</b> valores indicativos; la mediana es más robusta que el promedio. Se refuerza al ampliar la base.</div>`:''}
     ${descartados?`<div class="box small"><b>Control de calidad del dato:</b> se excluyeron <b>${descartados}</b> aviso(s) con USD/m² implausible frente a la mediana de su tipología. Es el síntoma típico de <b>metros cuadrados mal cargados en el portal</b> (ej. 1 m² o 11.111 m²), que distorsionan promedio y extremos.</div>`:''}
     <h2>Resumen de valores (USD/m²)</h2>
