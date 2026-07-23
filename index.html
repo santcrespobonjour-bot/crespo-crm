@@ -252,7 +252,8 @@ function editTemplates(){ const tpl=msgTemplates();
 }
 const SEED_COMMENTS={};
 const SEED_CONTACTS={};
-function migrate(){ DB.propiedades.forEach(p=>{ if(p.comentarios===undefined) p.comentarios = SEED_COMMENTS[p.id]||''; if(p.gestion===undefined) p.gestion='Sin clasificar'; if(p.proxima_accion===undefined) p.proxima_accion=''; if(p.fecha_seguimiento===undefined) p.fecha_seguimiento=''; if(p.responsable===undefined) p.responsable=''; if(p.estado_tarea===undefined) p.estado_tarea = (p.proxima_accion||'').trim()?'Pendiente':''; if(p.contacto===undefined) p.contacto = SEED_CONTACTS[p.id] || {nombre:'',telefono:'',email:'',inmobiliaria:''}; if(!Array.isArray(p.acciones)) p.acciones=[];
+const SEED_GESTION={};
+function migrate(){ DB.propiedades.forEach(p=>{ if(p.comentarios===undefined) p.comentarios = SEED_COMMENTS[p.id]||''; if(p.gestion===undefined) p.gestion=SEED_GESTION[p.id]||'Sin clasificar'; if(p.proxima_accion===undefined) p.proxima_accion=''; if(p.fecha_seguimiento===undefined) p.fecha_seguimiento=''; if(p.responsable===undefined) p.responsable=''; if(p.estado_tarea===undefined) p.estado_tarea = (p.proxima_accion||'').trim()?'Pendiente':''; if(p.contacto===undefined) p.contacto = SEED_CONTACTS[p.id] || {nombre:'',telefono:'',email:'',inmobiliaria:''}; if(!Array.isArray(p.acciones)) p.acciones=[];
   /* alta en CRM = cuándo entró a ESTA base. NO se estima con fecha_aviso (esa es la antigüedad del aviso en el portal).
      Las propiedades viejas quedan s/d hasta traer created_at de Supabase (botón en Base de datos). */
   if(p.fecha_alta===undefined) p.fecha_alta='';
